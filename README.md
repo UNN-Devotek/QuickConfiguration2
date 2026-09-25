@@ -51,6 +51,10 @@ See the changelog for more: [CHANGELOG.md](https://github.com/FelisDiligens/Quic
 
 ## Features
 
+The UNN-Devotek fork adds a guided Fallout Chat Mod installer under **Mods → FCM installer**.
+See [FCM-INSTALL.md](FCM-INSTALL.md) for its release sources, prerequisites,
+configuration merge rules, backups, and local test procedure.
+
 ### \*.ini tweaks
 
 - Change display, graphics, volume, audio, interface, and voice chat settings.

@@ -1,4 +1,21 @@
 {
+  "fcmInstaller": {
+    "tab": "FCM installer",
+    "title": "Fallout Chat Mod installer",
+    "intro": "Choose the visible HUD or the invisible Server Bridge. Only one can be active at a time.",
+    "prerequisites": "Installing requires HUDModLoader and either ZFE or xScal. Close Fallout 76 before previewing or applying changes.",
+    "action": "Install option",
+    "hud": "Visible HUD",
+    "bridge": "Server Bridge",
+    "remove": "Remove FCM mod",
+    "release": "Published version {{version}} from {{source}}",
+    "preview": "Preview changes",
+    "review": "Review file changes",
+    "detected": "Provider: {{provider}}. Current FCM mod: {{installed}}.",
+    "none": "none",
+    "apply": "Apply changes",
+    "completed": "Changes applied. Backup: {{backup}}"
+  },
   "common": {
     "yes": "Yes",
     "no": "No",

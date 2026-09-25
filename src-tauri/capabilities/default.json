@@ -18,7 +18,6 @@
     "os:default",
     "shell:allow-open",
     "shell:default",
-    "updater:default",
     "process:default",
     {
       "identifier": "http:default",

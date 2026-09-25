@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use ini::Ini;
@@ -15,6 +17,7 @@ pub struct IniFiles {
     pub main: Arc<Mutex<Ini>>,
     pub prefs: Arc<Mutex<Ini>>,
     pub custom: Arc<Mutex<Ini>>,
+    pub baselines: Arc<Mutex<HashMap<PathBuf, Option<Vec<u8>>>>>,
 }
 
 impl Default for IniFiles {
@@ -23,6 +26,7 @@ impl Default for IniFiles {
             main: Arc::new(Mutex::new(Ini::new())),
             prefs: Arc::new(Mutex::new(Ini::new())),
             custom: Arc::new(Mutex::new(Ini::new())),
+            baselines: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

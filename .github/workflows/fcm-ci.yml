@@ -1,0 +1,43 @@
+name: FCM installer checks
+
+on:
+  push:
+    branches: [main, feat/fcm-guided-installer]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm ui:lint
+      - run: pnpm ui:vitest
+      - run: pnpm cargo:check
+      - run: pnpm cargo:test
+      - name: Build unsigned Windows installer
+        if: runner.os == 'Windows'
+        run: pnpm build
+      - name: Save Windows installer for native testing
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-configuration-fcm-windows
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe

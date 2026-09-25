@@ -5,7 +5,6 @@ import ButtonRow from "@/components/common/ButtonRow";
 import ComboRow from "@/components/common/ComboRow";
 import { PageErrorAlert } from "@/components/common/ErrorAlert";
 import { FlexCol, FlexRow } from "@/components/common/Flex";
-import InfoRow from "@/components/common/InfoRow";
 import PageAlert from "@/components/common/PageAlert";
 import PageContainer from "@/components/common/PageContainer";
 import PageTitle from "@/components/common/PageTitle";
@@ -14,22 +13,18 @@ import RadioRow from "@/components/common/RadioRow";
 import RadioRowGroup from "@/components/common/RadioRowGroup";
 import SwitchRow from "@/components/common/SwitchRow";
 import { useTranslationUpdateState } from "@/hooks/translations";
-import { useUpdateCheckState } from "@/hooks/updater";
 import { useTranslationsStore } from "@/lib/i18n/store";
 import { translationUpdateService } from "@/services/translations";
-import { updaterService } from "@/services/updater";
 import { useSettingsStore } from "@/stores/settings";
 import { useToastsStore } from "@/stores/toasts";
 import { css } from "@emotion/react";
 import {
-  faArrowsRotate,
   faChevronRight,
   faDownload,
   faFileCirclePlus,
   faFileLines,
   faInfoCircle,
   faRefresh,
-  faTriangleExclamation,
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import * as dialog from "@tauri-apps/plugin-dialog";
@@ -54,12 +49,6 @@ export default function SettingsView() {
   );
   const setFetchServerStatusOnStart = useSettingsStore(
     (s) => s.setFetchServerStatusOnStart,
-  );
-  const checkForUpdatesOnStart = useSettingsStore(
-    (s) => s.checkForUpdatesOnStart,
-  );
-  const setCheckForUpdatesOnStart = useSettingsStore(
-    (s) => s.setCheckForUpdatesOnStart,
   );
   const downloadTranslationsOnStart = useSettingsStore(
     (s) => s.downloadTranslationsOnStart,
@@ -144,13 +133,6 @@ export default function SettingsView() {
           ),
       );
   };
-
-  /* Updater state */
-  const {
-    version: newVersion,
-    isPending: updateCheckPending,
-    error: updateCheckError,
-  } = useUpdateCheckState();
 
   return (
     <PageContainer>
@@ -314,71 +296,11 @@ export default function SettingsView() {
             onChange={setFetchServerStatusOnStart}
           />
           <SwitchRow
-            title={t("settings.behavior.checkForUpdates")}
-            subtitle={t("settings.behavior.checkForUpdatesSubtitle")}
-            checked={checkForUpdatesOnStart}
-            onChange={setCheckForUpdatesOnStart}
-          />
-          <SwitchRow
             title={t("settings.behavior.downloadTranslations")}
             subtitle={t("settings.behavior.downloadTranslationsSubtitle")}
             checked={downloadTranslationsOnStart}
             onChange={setDownloadTranslationsOnStart}
           />
-        </PreferencesGroup>
-
-        <PreferencesGroup title={t("settings.updates.title")}>
-          {updateCheckPending && (
-            <InfoRow>
-              <FlexRow
-                center
-                gap="1rem"
-                css={css`padding-top: 3px; padding-bottom: 3px;`}
-              >
-                <FlexCol noGrow noShrink>
-                  <Spinner animation="border" role="status">
-                    <span className="visually-hidden">Pending...</span>
-                  </Spinner>
-                </FlexCol>
-                <FlexCol>{t("common.loading")}</FlexCol>
-              </FlexRow>
-            </InfoRow>
-          )}
-          {updateCheckError && (
-            <InfoRow
-              title={t("settings.updates.checkFailed")}
-              icon={faTriangleExclamation}
-            >
-              {commandErrorToString(updateCheckError)}
-            </InfoRow>
-          )}
-          {newVersion && (
-            <InfoRow
-              title={t("settings.updates.updateAvailable")}
-              icon={faInfoCircle}
-            >
-              {newVersion}
-            </InfoRow>
-          )}
-          {!newVersion && (
-            <ButtonRow center onClick={() => updaterService.check()}>
-              <FontAwesomeIcon icon={faArrowsRotate} />
-              <span css={css`margin-left: 10px;`}>
-                {t("settings.updates.checkButton")}
-              </span>
-            </ButtonRow>
-          )}
-          {newVersion && (
-            <ButtonRow
-              center
-              onClick={() => updaterService.downloadAndInstall()}
-            >
-              <FontAwesomeIcon icon={faDownload} />
-              <span css={css`margin-left: 10px;`}>
-                {t("settings.updates.downloadAndInstall")}
-              </span>
-            </ButtonRow>
-          )}
         </PreferencesGroup>
 
         <PreferencesGroup title={t("settings.debug.title")}>

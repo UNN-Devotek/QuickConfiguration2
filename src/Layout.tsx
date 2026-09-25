@@ -1,12 +1,10 @@
 import Toasts from "@/components/Toasts";
-import UpdateProgressModal from "@/components/UpdateProgressModal";
 import FirstRunModal from "@/components/modals/FirstRunModal";
 import PrereleaseModal from "@/components/modals/PrereleaseModal";
 import Navigation from "@/components/navigation/Navigation";
 import { useNxmRedirect } from "@/hooks/nxm";
 import { useTranslationUpdateOnStart } from "@/hooks/translations";
 import useShowToastOnIniSaveError from "@/hooks/tweaks/useShowToastOnIniSaveError";
-import { useUpdateCheckOnStart } from "@/hooks/updater";
 import { useBlockFileDragAndDrop } from "@/hooks/useBlockFileDragAndDrop";
 import useSyncTranslation from "@/hooks/useSyncTranslation";
 import { css } from "@emotion/react";
@@ -16,14 +14,12 @@ function Globals() {
   useSyncTranslation();
   useNxmRedirect();
   useBlockFileDragAndDrop();
-  useUpdateCheckOnStart();
   useTranslationUpdateOnStart();
   useShowToastOnIniSaveError();
   return (
     <>
       <FirstRunModal />
       <PrereleaseModal />
-      <UpdateProgressModal />
       <Toasts />
     </>
   );

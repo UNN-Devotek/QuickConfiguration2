@@ -38,6 +38,9 @@ fn main() {
             commands::profiles::get_profiles,
             commands::profiles::save_profiles,
             commands::game::launch_game,
+            commands::fcm::fcm_releases,
+            commands::fcm::fcm_preview,
+            commands::fcm::fcm_apply,
             commands::ini::ini_load,
             commands::ini::ini_save,
             commands::ini::ini_create_files,
@@ -196,13 +199,13 @@ fn main() {
             }
         }))
         .plugin(build_log_plugin())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .manage(IniFiles::default())
+        .manage(commands::fcm::FcmPlans::default())
         .manage(Arguments(args))
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
