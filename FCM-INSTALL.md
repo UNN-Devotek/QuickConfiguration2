@@ -37,6 +37,13 @@ lines and comments. After a guided install, the UI reloads its INI and resource
 list state. The fork does not contact or install updates from the upstream
 Quick Configuration release channel.
 
+On Linux systems using NVIDIA, a blank or partly rendered window may require
+starting the AppImage with `WEBKIT_DISABLE_DMABUF_RENDERER=1`. The included
+`scripts/launch-appimage-linux.sh` sets this when it detects NVIDIA, honors an
+existing setting, and removes stale AppImage environment inherited from other
+applications. Point a desktop launcher's `Exec` to this script followed by the
+absolute AppImage path, or use the script from a terminal.
+
 ## Local replacement and acceptance
 
 On Linux, back up the current AppImage and the app configuration folder before

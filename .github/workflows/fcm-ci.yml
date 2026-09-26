@@ -32,6 +32,9 @@ jobs:
       - run: pnpm ui:vitest
       - run: pnpm cargo:check
       - run: pnpm cargo:test
+      - name: Check Linux AppImage launcher
+        if: runner.os == 'Linux'
+        run: sh -n scripts/launch-appimage-linux.sh
       - name: Build unsigned Windows installer
         if: runner.os == 'Windows'
         run: pnpm build
