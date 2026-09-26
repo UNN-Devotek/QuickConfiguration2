@@ -29,11 +29,9 @@ const preview: FcmPreview = {
   action: "installBridge",
   provider: "zfe",
   installed: "HUD",
-  release: {
+  package: {
     version: "0.2.8",
-    url: "",
     source: "Imported package",
-    digest: null,
   },
   changes: [
     {
@@ -81,7 +79,7 @@ it("applies an imported bridge after review and reloads INI state", async () => 
   expect(
     screen.getByText("/game/Data/FCMServerBridge.ba2"),
   ).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "fcmInstaller.apply" }));
+  fireEvent.click(screen.getByRole("button", { name: "fcmImport.apply" }));
   await waitFor(() =>
     expect(commands.fcmApply).toHaveBeenCalledWith("local-package-preview"),
   );

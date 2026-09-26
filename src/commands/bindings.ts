@@ -82,11 +82,8 @@ async saveProfiles(profiles: Profiles) : Promise<null> {
 async launchGame(profile: Profile) : Promise<null> {
     return await TAURI_INVOKE("launch_game", { profile });
 },
-async fcmReleases() : Promise<FcmReleases> {
-    return await TAURI_INVOKE("fcm_releases");
-},
-async fcmPreview(gamePath: string, iniPath: string, iniPrefix: string, action: FcmAction) : Promise<FcmPreview> {
-    return await TAURI_INVOKE("fcm_preview", { gamePath, iniPath, iniPrefix, action });
+async fcmPreviewRemove(gamePath: string, iniPath: string, iniPrefix: string) : Promise<FcmPreview> {
+    return await TAURI_INVOKE("fcm_preview_remove", { gamePath, iniPath, iniPrefix });
 },
 async fcmDetectImport(paths: string[]) : Promise<boolean> {
     return await TAURI_INVOKE("fcm_detect_import", { paths });
@@ -514,9 +511,8 @@ downloadedBytes: string;
 totalBytes: string; percent: number }
 export type FcmAction = "installHud" | "installBridge" | "remove"
 export type FcmChange = { path: string; description: string }
-export type FcmPreview = { token: string; action: FcmAction; provider: string; installed: string | null; release: FcmRelease | null; changes: FcmChange[] }
-export type FcmRelease = { version: string; url: string; source: string; digest: string | null }
-export type FcmReleases = { hud: FcmRelease | null; bridge: FcmRelease | null; hudError: string | null; bridgeError: string | null }
+export type FcmPackageInfo = { version: string; source: string }
+export type FcmPreview = { token: string; action: FcmAction; provider: string; installed: string | null; package: FcmPackageInfo | null; changes: FcmChange[] }
 export type FileCategory = "main" | "update" | "optional" | "old_version" | "miscellaneous"
 export type GameEdition = "Unknown" | "Steam" | "SteamPTS" | "Xbox" | 
 /**

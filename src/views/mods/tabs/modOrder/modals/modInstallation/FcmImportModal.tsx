@@ -32,8 +32,8 @@ export default function FcmImportModal({ preview, onAbort, onApplied }: Props) {
       useToastsStore
         .getState()
         .addToast(
-          t("fcmInstaller.title"),
-          t("fcmInstaller.completed", { backup }),
+          t("fcmImport.title"),
+          t("fcmImport.completed", { backup }),
           "success",
         );
       onApplied();
@@ -47,37 +47,37 @@ export default function FcmImportModal({ preview, onAbort, onApplied }: Props) {
   return (
     <Modal show={preview !== null} onHide={onAbort} size="lg">
       <Modal.Header closeButton>
-        <Modal.Title>{t("fcmInstaller.review")}</Modal.Title>
+        <Modal.Title>{t("fcmImport.review")}</Modal.Title>
       </Modal.Header>
       <Modal.Body>
         <p>
           {t(
             preview?.action === "remove"
-              ? "fcmInstaller.removeIntro"
-              : "fcmInstaller.importIntro",
+              ? "fcmImport.removeIntro"
+              : "fcmImport.importIntro",
           )}
         </p>
         {preview?.action !== "remove" && (
-          <p className="small text-muted">{t("fcmInstaller.prerequisites")}</p>
+          <p className="small text-muted">{t("fcmImport.prerequisites")}</p>
         )}
         {preview && (
           <>
             <p>
               {preview.action === "installHud"
-                ? t("fcmInstaller.hud")
+                ? t("fcmImport.hud")
                 : preview.action === "installBridge"
-                  ? t("fcmInstaller.bridge")
-                  : t("fcmInstaller.remove")}
-              {preview.release &&
-                ` — ${t("fcmInstaller.release", {
-                  version: preview.release.version,
-                  source: preview.release.source,
+                  ? t("fcmImport.bridge")
+                  : t("fcmImport.remove")}
+              {preview.package &&
+                ` — ${t("fcmImport.packageVersion", {
+                  version: preview.package.version,
+                  source: preview.package.source,
                 })}`}
             </p>
             <p>
-              {t("fcmInstaller.detected", {
+              {t("fcmImport.detected", {
                 provider: preview.provider,
-                installed: preview.installed || t("fcmInstaller.none"),
+                installed: preview.installed || t("fcmImport.none"),
               })}
             </p>
             <ListGroup>
@@ -102,7 +102,7 @@ export default function FcmImportModal({ preview, onAbort, onApplied }: Props) {
           {t("common.cancel")}
         </Button>
         <Button onClick={apply} disabled={pending || !preview?.changes.length}>
-          {pending ? <Spinner size="sm" /> : t("fcmInstaller.apply")}
+          {pending ? <Spinner size="sm" /> : t("fcmImport.apply")}
         </Button>
       </Modal.Footer>
     </Modal>

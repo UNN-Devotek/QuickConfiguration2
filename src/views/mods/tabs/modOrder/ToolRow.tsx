@@ -217,7 +217,7 @@ export default function ToolRow() {
         </Dropdown.Item>
         <Dropdown.Item onClick={() => modsEventBus.emitRemoveFcm()}>
           <FontAwesomeIcon icon={faTrashCan} />
-          &nbsp;{t("fcmInstaller.remove")}
+          &nbsp;{t("fcmImport.remove")}
         </Dropdown.Item>
       </ToolDropdown>
       <ToolSeparator />

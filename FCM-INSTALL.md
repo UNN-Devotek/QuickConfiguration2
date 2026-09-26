@@ -1,4 +1,4 @@
-# Fallout Chat Mod guided installation
+# Fallout Chat Mod package import
 
 Use **Mods → Install mod** or the usual drag-and-drop window to add a production
 FCM package. Quick Configuration recognizes the visible HUD ZIP, its ZFE or

@@ -1,4 +1,4 @@
-name: FCM installer checks
+name: FCM package import checks
 
 on:
   push:

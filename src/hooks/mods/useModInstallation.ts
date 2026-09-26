@@ -35,7 +35,7 @@ export function useModInstallation() {
     if (!(await commands.fcmDetectImport(paths))) return false;
     const profile = useProfilesStore.getState().getSelectedProfile();
     if (!profile) throw new Error(t("errors.profileNotSet"));
-    modsEventBus.emitProgressUpdated(t("fcmInstaller.inspecting"));
+    modsEventBus.emitProgressUpdated(t("fcmImport.inspecting"));
     await resourceListStoreSync.flushSave();
     const preview = await commands.fcmPreviewImport(
       profile.installationPath,
@@ -51,15 +51,14 @@ export function useModInstallation() {
   const previewFcmRemoval = async () => {
     const profile = useProfilesStore.getState().getSelectedProfile();
     if (!profile) throw new Error(t("errors.profileNotSet"));
-    modsEventBus.emitProgressUpdated(t("fcmInstaller.inspecting"));
+    modsEventBus.emitProgressUpdated(t("fcmImport.inspecting"));
     try {
       await resourceListStoreSync.flushSave();
       setFcmPreview(
-        await commands.fcmPreview(
+        await commands.fcmPreviewRemove(
           profile.installationPath,
           profile.iniPath,
           profile.iniPrefix,
-          "remove",
         ),
       );
       modsEventBus.emitProgressFinished();

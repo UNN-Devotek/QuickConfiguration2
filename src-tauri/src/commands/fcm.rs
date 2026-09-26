@@ -5,12 +5,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result, bail, ensure};
-use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use specta::Type;
 use tauri::State;
-use url::Url;
 use uuid::Uuid;
 use zip::ZipArchive;
 
@@ -42,10 +40,6 @@ pub fn fcm_preview_import(
     )?)
 }
 
-const FCM_API: &str = "https://falloutchatmod.com/api/releases";
-const GITHUB_API: &str = "https://api.github.com/repos/UNN-Devotek/FCM-Fallout-Chat-Mod/releases";
-const MAX_DOWNLOAD: usize = 32 * 1024 * 1024;
-
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Type, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum FcmAction {
@@ -56,20 +50,9 @@ pub enum FcmAction {
 
 #[derive(Clone, Debug, Deserialize, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct FcmRelease {
+pub struct FcmPackageInfo {
     pub version: String,
-    pub url: String,
     pub source: String,
-    pub digest: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct FcmReleases {
-    pub hud: Option<FcmRelease>,
-    pub bridge: Option<FcmRelease>,
-    pub hud_error: Option<String>,
-    pub bridge_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -86,7 +69,7 @@ pub struct FcmPreview {
     pub action: FcmAction,
     pub provider: String,
     pub installed: Option<String>,
-    pub release: Option<FcmRelease>,
+    pub package: Option<FcmPackageInfo>,
     pub changes: Vec<FcmChange>,
 }
 
@@ -103,192 +86,6 @@ struct Plan {
 
 #[derive(Default)]
 pub struct FcmPlans(Mutex<HashMap<String, Plan>>);
-
-#[derive(Deserialize)]
-struct ApiResponse {
-    data: Vec<ApiRelease>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ApiRelease {
-    hud_mod_version: Option<String>,
-    hud_mod_url: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct GithubRelease {
-    draft: bool,
-    prerelease: bool,
-    assets: Vec<GithubAsset>,
-}
-
-#[derive(Deserialize)]
-struct GithubAsset {
-    name: String,
-    browser_download_url: String,
-    digest: Option<String>,
-}
-
-fn client() -> Result<reqwest::Client> {
-    Ok(reqwest::Client::builder()
-        .user_agent("QuickConfiguration2-FCM/1.0")
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?)
-}
-
-fn allowed_url(raw: &str, host: &str) -> Result<()> {
-    let url = Url::parse(raw)?;
-    ensure!(
-        url.scheme() == "https" && url.host_str() == Some(host),
-        "Unexpected download host"
-    );
-    ensure!(
-        url.username().is_empty() && url.password().is_none() && url.port().is_none(),
-        "Unexpected URL credentials or port"
-    );
-    ensure!(url.path().ends_with(".zip"), "Expected a ZIP download");
-    Ok(())
-}
-
-async fn hud_release(http: &reqwest::Client) -> Result<FcmRelease> {
-    let response: ApiResponse = http
-        .get(FCM_API)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-    select_hud(response)
-}
-
-fn select_hud(response: ApiResponse) -> Result<FcmRelease> {
-    response
-        .data
-        .into_iter()
-        .filter_map(|item| {
-            let (Some(version), Some(url)) = (item.hud_mod_version, item.hud_mod_url) else {
-                return None;
-            };
-            Version::parse(&version)
-                .ok()
-                .map(|parsed| (parsed, version, url))
-        })
-        .max_by(|a, b| a.0.cmp(&b.0))
-        .map(|(_, version, url)| -> Result<FcmRelease> {
-            allowed_url(&url, "falloutchatmod.com")?;
-            Ok(FcmRelease {
-                version,
-                url,
-                source: "FCM release API".to_owned(),
-                digest: None,
-            })
-        })
-        .transpose()?
-        .context("No published HUD package was found")
-}
-
-async fn bridge_release(http: &reqwest::Client) -> Result<FcmRelease> {
-    let mut candidates = Vec::new();
-    for page in 1..=4 {
-        let url = format!("{GITHUB_API}?per_page=100&page={page}");
-        let releases: Vec<GithubRelease> = http
-            .get(url)
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
-        let last_page = releases.len() < 100;
-        candidates.extend(bridge_candidates(releases)?);
-        if last_page {
-            break;
-        }
-    }
-    candidates
-        .into_iter()
-        .max_by(|a, b| a.0.cmp(&b.0))
-        .map(|(_, r)| r)
-        .context("No published production Server Bridge ZIP was found")
-}
-
-fn bridge_candidates(releases: Vec<GithubRelease>) -> Result<Vec<(Version, FcmRelease)>> {
-    let mut candidates = Vec::new();
-    for release in releases.into_iter().filter(|r| !r.draft && !r.prerelease) {
-        for asset in release.assets {
-            let Some(version) = asset
-                .name
-                .strip_prefix("FCM-Server-Bridge-")
-                .and_then(|name| name.strip_suffix("-PROD.zip"))
-            else {
-                continue;
-            };
-            let Ok(parsed) = Version::parse(version) else {
-                continue;
-            };
-            let Some(digest) = asset
-                .digest
-                .filter(|value| value.starts_with("sha256:") && value.len() == 71)
-            else {
-                continue;
-            };
-            allowed_url(&asset.browser_download_url, "github.com")?;
-            ensure!(
-                Url::parse(&asset.browser_download_url)?
-                    .path()
-                    .starts_with("/UNN-Devotek/FCM-Fallout-Chat-Mod/releases/download/"),
-                "Unexpected bridge asset path"
-            );
-            candidates.push((
-                parsed,
-                FcmRelease {
-                    version: version.to_owned(),
-                    url: asset.browser_download_url,
-                    source: "FCM GitHub release".to_owned(),
-                    digest: Some(digest),
-                },
-            ));
-        }
-    }
-    Ok(candidates)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn fcm_releases() -> CommandResult<FcmReleases> {
-    let http = client()?;
-    let (hud, bridge) = tokio::join!(hud_release(&http), bridge_release(&http));
-    Ok(FcmReleases {
-        hud_error: hud.as_ref().err().map(ToString::to_string),
-        bridge_error: bridge.as_ref().err().map(ToString::to_string),
-        hud: hud.ok(),
-        bridge: bridge.ok(),
-    })
-}
-
-async fn download(http: &reqwest::Client, release: &FcmRelease) -> Result<Vec<u8>> {
-    let mut response = http.get(&release.url).send().await?.error_for_status()?;
-    if let Some(size) = response.content_length() {
-        ensure!(size <= MAX_DOWNLOAD as u64, "Package is too large");
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        ensure!(
-            bytes.len() + chunk.len() <= MAX_DOWNLOAD,
-            "Package is too large"
-        );
-        bytes.extend_from_slice(&chunk);
-    }
-    if let Some(expected) = &release.digest {
-        let actual = format!("sha256:{}", hex_digest(&bytes));
-        ensure!(
-            expected.eq_ignore_ascii_case(&actual),
-            "Release checksum mismatch"
-        );
-    }
-    Ok(bytes)
-}
 
 fn hex_digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -310,7 +107,7 @@ fn zip_file(zip: &mut ZipArchive<Cursor<Vec<u8>>>, name: &str, limit: u64) -> Re
 
 fn package_files(
     action: FcmAction,
-    release: &FcmRelease,
+    info: &FcmPackageInfo,
     bytes: Vec<u8>,
     provider: &str,
 ) -> Result<Vec<(PathBuf, Vec<u8>)>> {
@@ -322,7 +119,7 @@ fn package_files(
             ensure!(
                 readme
                     .lines()
-                    .any(|line| line.trim() == format!("Version: {}", release.version))
+                    .any(|line| line.trim() == format!("Version: {}", info.version))
                     && readme
                         .lines()
                         .any(|line| line.trim() == "Package provider: unified"),
@@ -342,8 +139,8 @@ fn package_files(
             ensure!(
                 ba2.starts_with(b"BTDX")
                     && ba2
-                        .windows(release.version.len())
-                        .any(|window| window == release.version.as_bytes()),
+                        .windows(info.version.len())
+                        .any(|window| window == info.version.as_bytes()),
                 "Invalid HUD BA2 or version stamp"
             );
             files.push((PathBuf::from("Data/FCMChatWidget.ba2"), ba2));
@@ -371,7 +168,7 @@ fn package_files(
             let build: serde_json::Value =
                 serde_json::from_slice(&zip_file(&mut zip, "BUILD.json", 10_000)?)?;
             ensure!(
-                build["version"] == release.version && build["target"] == "prod",
+                build["version"] == info.version && build["target"] == "prod",
                 "Bridge package version or target mismatch"
             );
             let ba2 = zip_file(&mut zip, "Data/FCMServerBridge.ba2", 2 * 1024 * 1024)?;
@@ -650,7 +447,7 @@ fn make_plan(
     ini_dir: &Path,
     prefix: &str,
     action: FcmAction,
-    release: Option<&FcmRelease>,
+    info: Option<&FcmPackageInfo>,
     package: Vec<(PathBuf, Vec<u8>)>,
 ) -> Result<(Plan, FcmPreview)> {
     ensure!(!game_running(), "Close Fallout 76 before changing mods");
@@ -743,7 +540,7 @@ fn make_plan(
         action,
         provider: selected_provider,
         installed,
-        release: release.cloned(),
+        package: info.cloned(),
         changes: changes
             .iter()
             .map(|change| FcmChange {
@@ -757,38 +554,20 @@ fn make_plan(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fcm_preview(
+pub fn fcm_preview_remove(
     game_path: String,
     ini_path: String,
     ini_prefix: String,
-    action: FcmAction,
     state: State<'_, FcmPlans>,
 ) -> CommandResult<FcmPreview> {
-    let game = PathBuf::from(game_path);
-    let ini = PathBuf::from(ini_path);
-    if game_running() {
-        return Err(anyhow::anyhow!("Close Fallout 76 before changing mods").into());
-    }
-    let selected_provider = if action == FcmAction::Remove {
-        "not required".to_owned()
-    } else {
-        provider(&game)?
-    };
-    let (release, files) = match action {
-        FcmAction::Remove => (None, Vec::new()),
-        FcmAction::InstallHud | FcmAction::InstallBridge => {
-            let http = client()?;
-            let release = if action == FcmAction::InstallHud {
-                hud_release(&http).await?
-            } else {
-                bridge_release(&http).await?
-            };
-            let bytes = download(&http, &release).await?;
-            let files = package_files(action, &release, bytes, &selected_provider)?;
-            (Some(release), files)
-        }
-    };
-    let (plan, preview) = make_plan(&game, &ini, &ini_prefix, action, release.as_ref(), files)?;
+    let (plan, preview) = make_plan(
+        Path::new(&game_path),
+        Path::new(&ini_path),
+        &ini_prefix,
+        FcmAction::Remove,
+        None,
+        Vec::new(),
+    )?;
     state.0.lock()?.insert(preview.token.clone(), plan);
     Ok(preview)
 }
@@ -938,24 +717,6 @@ mod tests {
     }
 
     #[test]
-    fn newest_bridge_asset_can_be_in_older_release() -> Result<()> {
-        let newer = GithubRelease {
-            draft: false,
-            prerelease: false,
-            assets: Vec::new(),
-        };
-        let older = GithubRelease { draft: false, prerelease: false, assets: vec![GithubAsset {
-            name: "FCM-Server-Bridge-0.2.8-PROD.zip".to_owned(),
-            browser_download_url: "https://github.com/UNN-Devotek/FCM-Fallout-Chat-Mod/releases/download/v1.4.1/FCM-Server-Bridge-0.2.8-PROD.zip".to_owned(),
-            digest: Some(format!("sha256:{}", "0".repeat(64))),
-        }] };
-        let candidate = bridge_candidates(vec![newer, older])?;
-        assert_eq!(candidate.len(), 1);
-        assert_eq!(candidate[0].1.version, "0.2.8");
-        Ok(())
-    }
-
-    #[test]
     fn published_unified_hud_layout_selects_one_provider() -> Result<()> {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let options = zip::write::SimpleFileOptions::default();
@@ -994,14 +755,12 @@ mod tests {
             writer.write_all(contents.as_bytes())?;
         }
         let bytes = writer.finish()?.into_inner();
-        let release = FcmRelease {
+        let info = FcmPackageInfo {
             version: "2.10.125".to_owned(),
-            url: String::new(),
             source: String::new(),
-            digest: None,
         };
-        let zfe = package_files(FcmAction::InstallHud, &release, bytes.clone(), "zfe")?;
-        let xscal = package_files(FcmAction::InstallHud, &release, bytes, "xscal")?;
+        let zfe = package_files(FcmAction::InstallHud, &info, bytes.clone(), "zfe")?;
+        let xscal = package_files(FcmAction::InstallHud, &info, bytes, "xscal")?;
         assert_eq!(zfe[0].1, b"BTDX zfe 2.10.125");
         assert_eq!(xscal[0].1, b"BTDX xscal 2.10.125");
         assert_eq!(zfe.len(), 3);
@@ -1028,19 +787,6 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn failed_download_does_not_produce_a_package() -> Result<()> {
-        let server = wiremock::MockServer::start().await;
-        let release = FcmRelease {
-            version: "2.10.125".to_owned(),
-            url: format!("{}/missing.zip", server.uri()),
-            source: "test".to_owned(),
-            digest: None,
-        };
-        assert!(download(&client()?, &release).await.is_err());
-        Ok(())
-    }
-
     #[test]
     fn install_switch_remove_preserves_other_settings() -> Result<()> {
         let fixture = tempfile::tempdir()?;
@@ -1062,18 +808,16 @@ mod tests {
         fs::write(game.join("Data/FCMChatWidget.ba2"), b"BTDX old")?;
         let custom = ini.join("Fallout76Custom.ini");
         fs::write(&custom, b"[Archive]\nsResourceArchive2List=Other.ba2,HUDModLoader.ba2,FCMChatWidget.ba2\n[Other]\nkeep=yes\n")?;
-        let release = FcmRelease {
+        let info = FcmPackageInfo {
             version: "0.2.8".to_owned(),
-            url: "https://github.com/example.zip".to_owned(),
             source: "test".to_owned(),
-            digest: None,
         };
         let (plan, preview) = make_plan(
             &game,
             &ini,
             "Fallout76",
             FcmAction::InstallBridge,
-            Some(&release),
+            Some(&info),
             vec![(
                 PathBuf::from("Data/FCMServerBridge.ba2"),
                 b"BTDX new".to_vec(),
@@ -1094,7 +838,7 @@ mod tests {
             &ini,
             "Fallout76",
             FcmAction::InstallBridge,
-            Some(&release),
+            Some(&info),
             vec![(
                 PathBuf::from("Data/FCMServerBridge.ba2"),
                 b"BTDX new".to_vec(),

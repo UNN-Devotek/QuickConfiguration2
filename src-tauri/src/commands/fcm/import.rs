@@ -8,9 +8,9 @@ use regex::bytes::Regex;
 use semver::Version;
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
-use super::{
-    FcmAction, FcmPlans, FcmPreview, FcmRelease, MAX_DOWNLOAD, make_plan, package_files, provider,
-};
+use super::{FcmAction, FcmPackageInfo, FcmPlans, FcmPreview, make_plan, package_files, provider};
+
+const MAX_NESTED_ZIP_BYTES: u64 = 32 * 1024 * 1024;
 
 enum ImportSource {
     Directory(PathBuf),
@@ -20,7 +20,7 @@ enum ImportSource {
 
 struct ImportedPackage {
     action: FcmAction,
-    release: FcmRelease,
+    info: FcmPackageInfo,
     files: Vec<(PathBuf, Vec<u8>)>,
 }
 
@@ -177,12 +177,10 @@ fn package_zip(entries: Vec<(String, Vec<u8>)>) -> Result<Vec<u8>> {
     Ok(writer.finish()?.into_inner())
 }
 
-fn local_release(version: String) -> FcmRelease {
-    FcmRelease {
+fn local_package_info(version: String) -> FcmPackageInfo {
+    FcmPackageInfo {
         version,
-        url: String::new(),
         source: "Imported package".to_owned(),
-        digest: None,
     }
 }
 
@@ -210,15 +208,15 @@ fn import_bridge(
         "Only production bridge packages are supported"
     );
     let ba2 = source.read(&ba2_name, 2 * 1024 * 1024)?;
-    let release = local_release(version.to_owned());
+    let info = local_package_info(version.to_owned());
     let bytes = package_zip(vec![
         ("BUILD.json".to_owned(), build),
         ("Data/FCMServerBridge.ba2".to_owned(), ba2),
     ])?;
-    let files = package_files(FcmAction::InstallBridge, &release, bytes, "zfe")?;
+    let files = package_files(FcmAction::InstallBridge, &info, bytes, "zfe")?;
     Ok(ImportedPackage {
         action: FcmAction::InstallBridge,
-        release,
+        info,
         files,
     })
 }
@@ -325,7 +323,7 @@ fn import_hud(
     );
     let ba2 = source.read(ba2_name, 20 * 1024 * 1024)?;
     let version = hud_version(source, names, root, &ba2)?;
-    let release = local_release(version.clone());
+    let info = local_package_info(version.clone());
     let use_zfe = package_provider == "zfe";
     let folder = if use_zfe {
         "ZFE (Install for ZFE only)"
@@ -357,13 +355,13 @@ fn import_hud(
     }
     let files = package_files(
         FcmAction::InstallHud,
-        &release,
+        &info,
         package_zip(entries)?,
         selected_provider,
     )?;
     Ok(ImportedPackage {
         action: FcmAction::InstallHud,
-        release,
+        info,
         files,
     })
 }
@@ -416,7 +414,7 @@ fn inspect_source(
         {
             let lower = name.to_ascii_lowercase();
             if lower.contains("fcm") || lower.contains("bridge") || lower.contains("hud") {
-                let bytes = source.read(name, MAX_DOWNLOAD as u64)?;
+                let bytes = source.read(name, MAX_NESTED_ZIP_BYTES)?;
                 packages.extend(inspect_source(
                     &ImportSource::ZipBytes(bytes),
                     selected_provider,
@@ -443,7 +441,7 @@ fn contains_marker(source: &ImportSource, nested: bool) -> Result<bool> {
         {
             let lower = name.to_ascii_lowercase();
             if lower.contains("fcm") || lower.contains("bridge") || lower.contains("hud") {
-                let bytes = source.read(name, MAX_DOWNLOAD as u64)?;
+                let bytes = source.read(name, MAX_NESTED_ZIP_BYTES)?;
                 if contains_marker(&ImportSource::ZipBytes(bytes), true)? {
                     return Ok(true);
                 }
@@ -502,7 +500,7 @@ pub(super) fn preview_import(
     for source in source_paths(paths)? {
         let label = source.label();
         for mut package in inspect_source(&source, &selected_provider, false)? {
-            package.release.source = format!("Local package: {label}");
+            package.info.source = format!("Local package: {label}");
             packages.push(package);
         }
     }
@@ -516,7 +514,7 @@ pub(super) fn preview_import(
         Path::new(&ini_path),
         ini_prefix,
         package.action,
-        Some(&package.release),
+        Some(&package.info),
         package.files,
     )?;
     state
@@ -614,7 +612,7 @@ mod tests {
             inspect_source(&ImportSource::ZipBytes(package_zip(entries)?), "zfe", false)?;
         assert_eq!(packages.len(), 1);
         assert_eq!(packages[0].files.len(), 3);
-        assert_eq!(packages[0].release.version, "2.10.125");
+        assert_eq!(packages[0].info.version, "2.10.125");
         Ok(())
     }
 

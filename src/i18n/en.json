@@ -1,6 +1,6 @@
 {
-  "fcmInstaller": {
-    "title": "Fallout Chat Mod installer",
+  "fcmImport": {
+    "title": "Fallout Chat Mod package",
     "importIntro": "Quick Configuration recognized an FCM package in this import. Review the files before installing it. The visible HUD and Server Bridge cannot be active together.",
     "removeIntro": "Review the FCM files and entries that will be removed.",
     "inspecting": "Inspecting FCM package...",
@@ -8,7 +8,7 @@
     "hud": "Visible HUD",
     "bridge": "Server Bridge",
     "remove": "Remove FCM mod",
-    "release": "Package version {{version}} from {{source}}",
+    "packageVersion": "Package version {{version}} from {{source}}",
     "review": "Review file changes",
     "detected": "Provider: {{provider}}. Current FCM mod: {{installed}}.",
     "none": "none",

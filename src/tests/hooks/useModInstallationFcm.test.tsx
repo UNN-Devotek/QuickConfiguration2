@@ -10,6 +10,7 @@ vi.mock("@/commands/bindings", () => ({
   commands: {
     fcmDetectImport: vi.fn(),
     fcmPreviewImport: vi.fn(),
+    fcmPreviewRemove: vi.fn(),
   },
 }));
 
@@ -65,7 +66,7 @@ beforeEach(() => {
     action: "installBridge",
     provider: "zfe",
     installed: null,
-    release: null,
+    package: null,
     changes: [],
   } satisfies FcmPreview);
   vi.mocked(resourceListStoreSync.flushSave).mockResolvedValue();
@@ -96,4 +97,25 @@ it("routes an FCM ZIP through safe preview before ordinary mod staging", async (
   expect(hook.result.current.fcmModalProps.preview?.token).toBe(
     "preview-token",
   );
+});
+
+it("previews removal through the dedicated command", async () => {
+  vi.mocked(commands.fcmPreviewRemove).mockResolvedValue({
+    token: "remove-token",
+    action: "remove",
+    provider: "not required",
+    installed: "HUD",
+    package: null,
+    changes: [],
+  });
+  const hook = renderHook(() => useModInstallation());
+  await act(async () => {
+    await hook.result.current.previewFcmRemoval();
+  });
+  expect(commands.fcmPreviewRemove).toHaveBeenCalledWith(
+    "/game",
+    "/ini",
+    "Fallout76",
+  );
+  expect(hook.result.current.fcmModalProps.preview?.action).toBe("remove");
 });
