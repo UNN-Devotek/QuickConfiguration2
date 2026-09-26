@@ -8,7 +8,6 @@ import {
   faGear,
   faListCheck,
   faPuzzlePiece,
-  faComments,
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { atom, useAtom } from "jotai";
@@ -18,9 +17,8 @@ import MigrationBoundary from "./legacy/MigrationBoundary";
 import ModOrderTab from "./tabs/modOrder/ModOrderTab";
 import ResourceListTab from "./tabs/resourceList/ResourceListTab";
 import SettingsTab from "./tabs/settings/SettingsTab";
-import FcmInstallerTab from "./tabs/fcm/FcmInstallerTab";
 
-type Tabs = "modorder" | "resourcelist" | "settings" | "fcm";
+type Tabs = "modorder" | "resourcelist" | "settings";
 export const activeTabAtom = atom<Tabs>("modorder");
 
 function ModsPageContainer({ children }: { children: React.ReactNode }) {
@@ -90,17 +88,6 @@ function SuspendedModsView() {
           }
         >
           <ResourceListTab />
-        </Tab>
-        <Tab
-          eventKey="fcm"
-          title={
-            <div>
-              <FontAwesomeIcon icon={faComments} />
-              &nbsp;{t("fcmInstaller.tab")}
-            </div>
-          }
-        >
-          <FcmInstallerTab />
         </Tab>
         <Tab
           eventKey="settings"

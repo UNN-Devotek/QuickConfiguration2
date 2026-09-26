@@ -1,15 +1,13 @@
-import { commands } from "@/commands/bindings";
+import { commands, type FcmPreview } from "@/commands/bindings";
 import { resourceListStoreSync } from "@/stores/resourceList";
 import { useProfilesStore } from "@/stores/profiles";
 import { useToastsStore } from "@/stores/toasts";
-import FcmInstallerTab from "@/views/mods/tabs/fcm/FcmInstallerTab";
+import FcmImportModal from "@/views/mods/tabs/modOrder/modals/modInstallation/FcmImportModal";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
 vi.mock("@/commands/bindings", () => ({
   commands: {
-    fcmReleases: vi.fn(),
-    fcmPreview: vi.fn(),
     fcmApply: vi.fn(),
     iniLoad: vi.fn(),
   },
@@ -17,7 +15,6 @@ vi.mock("@/commands/bindings", () => ({
 
 vi.mock("@/stores/resourceList", () => ({
   resourceListStoreSync: {
-    flushSave: vi.fn(),
     cancelSave: vi.fn(),
     load: vi.fn(),
   },
@@ -26,6 +23,25 @@ vi.mock("@/stores/resourceList", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+
+const preview: FcmPreview = {
+  token: "local-package-preview",
+  action: "installBridge",
+  provider: "zfe",
+  installed: "HUD",
+  release: {
+    version: "0.2.8",
+    url: "",
+    source: "Imported package",
+    digest: null,
+  },
+  changes: [
+    {
+      path: "/game/Data/FCMServerBridge.ba2",
+      description: "Install FCM package file",
+    },
+  ],
+};
 
 beforeEach(() => {
   useProfilesStore.getState().setStore({
@@ -46,49 +62,31 @@ beforeEach(() => {
     ],
     selected: "profile",
   });
-  vi.mocked(commands.fcmReleases).mockResolvedValue({
-    hud: null,
-    bridge: null,
-    hudError: "offline",
-    bridgeError: "offline",
-  });
-  vi.mocked(commands.fcmPreview).mockResolvedValue({
-    token: "preview-token",
-    action: "remove",
-    provider: "not required",
-    installed: "HUD",
-    release: null,
-    changes: [
-      { path: "/game/Data/hudmodloader.ini", description: "Remove FCM entry" },
-    ],
-  });
   vi.mocked(commands.fcmApply).mockResolvedValue("/backup");
   vi.mocked(commands.iniLoad).mockResolvedValue(null);
-  vi.mocked(resourceListStoreSync.flushSave).mockResolvedValue();
   vi.mocked(resourceListStoreSync.load).mockResolvedValue();
 });
 
 afterEach(() => vi.clearAllMocks());
 
-it("allows removal while release sources are unavailable and refreshes state after apply", async () => {
-  render(<FcmInstallerTab />);
-  fireEvent.change(screen.getByRole("combobox"), {
-    target: { value: "remove" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "fcmInstaller.preview" }));
-  await waitFor(() =>
-    expect(commands.fcmPreview).toHaveBeenCalledWith(
-      "/game",
-      "/ini",
-      "Fallout76",
-      "remove",
-    ),
+it("applies an imported bridge after review and reloads INI state", async () => {
+  const onApplied = vi.fn();
+  render(
+    <FcmImportModal
+      preview={preview}
+      onAbort={vi.fn()}
+      onApplied={onApplied}
+    />,
   );
+  expect(
+    screen.getByText("/game/Data/FCMServerBridge.ba2"),
+  ).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "fcmInstaller.apply" }));
   await waitFor(() =>
-    expect(commands.fcmApply).toHaveBeenCalledWith("preview-token"),
+    expect(commands.fcmApply).toHaveBeenCalledWith("local-package-preview"),
   );
   expect(commands.iniLoad).toHaveBeenCalledWith("/ini", "Fallout76");
   expect(resourceListStoreSync.load).toHaveBeenCalled();
+  expect(onApplied).toHaveBeenCalled();
   expect(useToastsStore.getState().toasts.at(-1)?.variant).toBe("success");
 });

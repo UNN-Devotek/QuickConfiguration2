@@ -88,6 +88,12 @@ async fcmReleases() : Promise<FcmReleases> {
 async fcmPreview(gamePath: string, iniPath: string, iniPrefix: string, action: FcmAction) : Promise<FcmPreview> {
     return await TAURI_INVOKE("fcm_preview", { gamePath, iniPath, iniPrefix, action });
 },
+async fcmDetectImport(paths: string[]) : Promise<boolean> {
+    return await TAURI_INVOKE("fcm_detect_import", { paths });
+},
+async fcmPreviewImport(gamePath: string, iniPath: string, iniPrefix: string, paths: string[]) : Promise<FcmPreview> {
+    return await TAURI_INVOKE("fcm_preview_import", { gamePath, iniPath, iniPrefix, paths });
+},
 async fcmApply(token: string) : Promise<string> {
     return await TAURI_INVOKE("fcm_apply", { token });
 },

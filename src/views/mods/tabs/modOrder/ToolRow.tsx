@@ -16,6 +16,7 @@ import {
   faFolderPlus,
   faPlusSquare,
   faRefresh,
+  faTrashCan,
   faServer,
   faThumbsUp,
 } from "@fortawesome/free-solid-svg-icons";
@@ -213,6 +214,10 @@ export default function ToolRow() {
         <Dropdown.Item onClick={() => modsEventBus.emitShowConflictingFiles()}>
           <FontAwesomeIcon icon={faFileCircleExclamation} />
           &nbsp;{t("mods.modOrderTab.toolbar.showConflictingFiles")}
+        </Dropdown.Item>
+        <Dropdown.Item onClick={() => modsEventBus.emitRemoveFcm()}>
+          <FontAwesomeIcon icon={faTrashCan} />
+          &nbsp;{t("fcmInstaller.remove")}
         </Dropdown.Item>
       </ToolDropdown>
       <ToolSeparator />

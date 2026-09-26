@@ -16,6 +16,32 @@ use zip::ZipArchive;
 
 use super::errors::CommandResult;
 
+mod import;
+
+#[tauri::command]
+#[specta::specta]
+pub fn fcm_detect_import(paths: Vec<String>) -> CommandResult<bool> {
+    Ok(import::detect_import(&paths)?)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn fcm_preview_import(
+    game_path: String,
+    ini_path: String,
+    ini_prefix: String,
+    paths: Vec<String>,
+    state: State<'_, FcmPlans>,
+) -> CommandResult<FcmPreview> {
+    Ok(import::preview_import(
+        &game_path,
+        &ini_path,
+        &ini_prefix,
+        &paths,
+        &state,
+    )?)
+}
+
 const FCM_API: &str = "https://falloutchatmod.com/api/releases";
 const GITHUB_API: &str = "https://api.github.com/repos/UNN-Devotek/FCM-Fallout-Chat-Mod/releases";
 const MAX_DOWNLOAD: usize = 32 * 1024 * 1024;

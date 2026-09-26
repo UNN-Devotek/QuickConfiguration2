@@ -19,6 +19,7 @@ export type UIActionEvent =
   | { type: "mods-global-enabled-changed"; enabled: boolean }
   | { type: "mods-delete-mod"; key: string }
   | { type: "mods-import-installed-archives" }
+  | { type: "fcm-remove" }
   | { type: "mods-show-conflicting-files" }
   | { type: "nexus-mods-check-for-updates" }
   | { type: "nexus-mods-download-mods-info" }
@@ -155,6 +156,10 @@ export class ModsEventBus {
   /* Imports all installed *.ba2 archives belonging to mods that are not managed by the mod manager. */
   emitImportInstalledArchives() {
     this.emitUIActionEvent({ type: "mods-import-installed-archives" });
+  }
+
+  emitRemoveFcm() {
+    this.emitUIActionEvent({ type: "fcm-remove" });
   }
 
   /* Searches all mods for duplicate (= conflicting) files and shows an enumeration of these. */

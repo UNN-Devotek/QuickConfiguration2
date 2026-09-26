@@ -1,28 +1,30 @@
 # Fallout Chat Mod guided installation
 
-The **Mods → FCM installer** tab installs one optional in-game mod: the visible
-FCM Chat Widget or the invisible FCM Server Bridge. It does not install or change
-the separate Fallout Chat Mod desktop overlay. The two in-game mods cannot be
-active together.
+Use **Mods → Install mod** or the usual drag-and-drop window to add a production
+FCM package. Quick Configuration recognizes the visible HUD ZIP, its ZFE or
+xScal provider folder, and the optional Server Bridge folder inside Windows
+setup, portable, or Linux overlay ZIPs. It reviews the FCM file changes in the
+normal import flow before installing. It never runs or installs the overlay
+executable or Linux installer from those ZIPs. The visible HUD and invisible
+Server Bridge cannot be active together.
 
 Install HUDModLoader and one native provider (ZFE or xScal) first. Select the
 Fallout 76 game and active INI directories in the Quick Configuration profile.
-Close Fallout 76, select an FCM option, and review the exact file paths before
-applying. The installer reads the production HUD version from
-`https://falloutchatmod.com/api/releases`. It reads published production bridge
-ZIP assets from the `UNN-Devotek/FCM-Fallout-Chat-Mod` GitHub releases API; a
-newer overlay release without a bridge asset does not replace the last bridge
-release. It rejects drafts, prereleases, wrong hosts, mismatched versions and
-invalid packages. GitHub's SHA-256 asset digest is mandatory for bridge ZIPs.
-The current HUD download is a unified archive with separate ZFE and xScal
-folders; the installer reads only the selected provider folder.
+Close Fallout 76, import the downloaded ZIP or folder, and review the exact file
+paths before applying. The imported package supplies its version: the HUD's
+production installation metadata or BA2 stamp, and the bridge's production
+`BUILD.json` and BA2 checksum. The installer validates the selected provider and
+required files. It does not fetch a release or silently replace the package you
+selected. An incomplete FCM package fails instead of entering the generic mod
+deployment path. To remove the active FCM mod, use **Mods → More → Remove FCM
+mod**.
 
 The installer backs up every changed file under the app configuration directory's
 `fcm-backups/` folder and displays that backup path when complete. It merges
 `Data/hudmodloader.ini` and the active `Fallout76Custom.ini` archive list without
 replacing unrelated entries. A visible HUD install creates `Data/FCMChat.ini` or
 the ZFE fragment only if absent, preserving edited copies. On xScal it merges
-only `[Chat] enabled` and `relayEndpoint` from the published package example.
+only `[Chat] enabled` and `relayEndpoint` from the supplied package example.
 If HUDModLoader later ships an FCM entry by default, the installer recognizes
 existing FCM lines, removes duplicates, and leaves one line for the chosen mode.
 The bridge never changes provider chat settings. Removal clears the FCM BA2 and

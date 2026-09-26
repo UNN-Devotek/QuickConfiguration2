@@ -40,6 +40,8 @@ fn main() {
             commands::game::launch_game,
             commands::fcm::fcm_releases,
             commands::fcm::fcm_preview,
+            commands::fcm::fcm_detect_import,
+            commands::fcm::fcm_preview_import,
             commands::fcm::fcm_apply,
             commands::ini::ini_load,
             commands::ini::ini_save,
