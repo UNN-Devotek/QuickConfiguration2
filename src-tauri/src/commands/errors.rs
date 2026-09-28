@@ -6,7 +6,10 @@ use tap::TapFallible;
 use thiserror::Error;
 
 use crate::features::{
+    archive2::{Archive2Error, Archive2ReadError},
     linkhandler::error::NXMError,
+    mods::errors::ModActionError,
+    sevenzip::SevenzipError,
     translations::{TranslationError, TranslationResult},
 };
 use crate::utils::download::DownloadError;
@@ -43,6 +46,12 @@ pub enum CommandError {
     #[error("{message}")]
     Utf8Error { message: String },
     #[error("{message}")]
+    SevenzipError { message: String, variant: String },
+    #[error("{message}")]
+    Archive2Error { message: String, variant: String },
+    #[error("{message}")]
+    Archive2ReadError { message: String, variant: String },
+    #[error("{message}")]
     MutexLock { message: String },
     #[error("{message}")]
     TauriError { message: String },
@@ -58,6 +67,8 @@ pub enum CommandError {
     ReqwestError { message: String },
     #[error("{message}")]
     DownloadError { message: String, variant: String },
+    #[error("{message}")]
+    ModActionError { message: String, variant: String },
     #[error("{file_name:?} {line}:{col} {msg}")]
     #[serde(rename_all = "camelCase")]
     IniParseError {
@@ -97,6 +108,20 @@ macro_rules! impl_from_for_error {
     };
 }
 
+macro_rules! impl_from_for_error_with_variant {
+    ($error_type:ty, $enum_variant:ident) => {
+        impl From<$error_type> for CommandError {
+            fn from(value: $error_type) -> Self {
+                let variant: &'_ str = value.as_ref();
+                Self::$enum_variant {
+                    message: value.to_string(),
+                    variant: variant.to_owned(),
+                }
+            }
+        }
+    };
+}
+
 impl_from_for_error!(&str, String);
 impl_from_for_error!(String, String);
 impl_from_for_error!(anyhow::Error, Anyhow);
@@ -105,6 +130,8 @@ impl_from_for_error!(tauri::Error, TauriError);
 impl_from_for_error!(tokio::task::JoinError, TokioError);
 impl_from_for_error!(regex::Error, RegexError);
 impl_from_for_error!(TryFromIntError, DowncastError);
+impl_from_for_error_with_variant!(Archive2Error, Archive2Error);
+impl_from_for_error_with_variant!(Archive2ReadError, Archive2ReadError);
 impl_from_for_error!(camino::FromPathError, Utf8Error);
 impl_from_for_error!(camino::FromPathBufError, Utf8Error);
 impl_from_for_error!(camino::FromOsStrError, Utf8Error);
@@ -147,6 +174,26 @@ impl From<StripPrefixError> for CommandError {
     }
 }
 
+impl From<SevenzipError> for CommandError {
+    fn from(value: SevenzipError) -> Self {
+        match value {
+            SevenzipError::SevenzipNotFound => Self::SevenzipError {
+                message: value.to_string(),
+                variant: value.as_ref().to_owned(),
+            },
+            SevenzipError::RARNotSupported => Self::SevenzipError {
+                message: value.to_string(),
+                variant: value.as_ref().to_owned(),
+            },
+            SevenzipError::Io(error) => error.into(),
+            SevenzipError::DestinationNotFound(ref destination) => Self::SevenzipError {
+                message: destination.to_string(),
+                variant: value.as_ref().to_owned(),
+            },
+        }
+    }
+}
+
 impl From<NXMError> for CommandError {
     fn from(value: NXMError) -> Self {
         match value {
@@ -160,6 +207,37 @@ impl From<NXMError> for CommandError {
             NXMError::Ini(err) => err.into(),
             #[cfg(target_os = "linux")]
             NXMError::ParseIni(err) => err.into(),
+        }
+    }
+}
+
+impl From<ModActionError> for CommandError {
+    fn from(value: ModActionError) -> Self {
+        match value {
+            ModActionError::FolderAlreadyExists(_)
+            | ModActionError::InvalidFolderName(_)
+            | ModActionError::NotAFile(_)
+            | ModActionError::NotAFolder(_)
+            | ModActionError::NotFound(_)
+            | ModActionError::ModNotFound(_)
+            | ModActionError::InvalidModFolderPath(_)
+            | ModActionError::InvalidModTargetPath(_) => Self::ModActionError {
+                message: value.to_string(),
+                variant: value.as_ref().to_owned(),
+            },
+            ModActionError::Io(error) => error.into(),
+            ModActionError::PathUtf8Converation(error) => Self::Utf8Error {
+                message: error.to_string(),
+            },
+            ModActionError::NoBasename(ref error) => Self::PathError {
+                message: error.to_string(),
+                variant: value.as_ref().to_owned(),
+            },
+            ModActionError::PathStripPrefix(error) => error.into(),
+            ModActionError::Sevenzip(error) => error.into(),
+            ModActionError::Archive2(error) => error.into(),
+            ModActionError::Anyhow(error) => error.into(),
+            ModActionError::Regex(error) => error.into(),
         }
     }
 }

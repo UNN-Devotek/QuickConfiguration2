@@ -5,7 +5,7 @@ import { useProfilesStore } from "@/stores/profiles";
 import { useSettingsStore } from "@/stores/settings";
 import FcmPrerequisiteModal, {
   latestMainZip,
-} from "@/views/mods/FcmPrerequisiteModal";
+} from "@/views/mods/tabs/modOrder/modals/modInstallation/FcmPrerequisiteModal";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 

@@ -104,3 +104,29 @@ pub async fn load_all_translation_metadata()
     .map_err(CommandError::from)
     .flatten()
 }
+
+#[tauri::command]
+#[specta::specta]
+#[function_name::named]
+pub async fn check_for_translation_updates(last_updated: Option<String>) -> CommandResult<bool> {
+    log::trace!("Called command {}", function_name!());
+    translations::check_for_updates(
+        last_updated
+            .and_then(|dt| chrono::DateTime::parse_from_rfc3339(&dt).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc)),
+    )
+    .await
+    .tap_err(|e| log::error!("Couldn't check for translation updates: {e}"))
+    .map_err(CommandError::from)
+}
+
+#[tauri::command]
+#[specta::specta]
+#[function_name::named]
+pub async fn download_translations() -> CommandResult<Vec<String>> {
+    log::trace!("Called command {}", function_name!());
+    translations::download_translations()
+        .await
+        .tap_err(|e| log::error!("Couldn't download translations: {e}"))
+        .map_err(CommandError::from)
+}

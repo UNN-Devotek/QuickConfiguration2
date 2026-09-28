@@ -67,10 +67,13 @@ body {
     summary {
         color: #d8b041;
     }
-
+    
     /* Primary color is too bright for text */
     button.btn-outline-primary:not(:hover) {
         color: #775907;
+    }
+    .nav-pills a[role=tab].active {
+        background-color: #94782a;
     }
 }
 
@@ -87,8 +90,11 @@ body {
     summary {
         color: #fed664;
     }
-
+    
     /* Primary color is too bright for text */
+    .nav-pills a[role=tab].active {
+        background-color: #94782a;
+    }
 }
 
 a {
@@ -158,6 +164,69 @@ button.btn-outline-warning:not(:hover) {
 }
 button.btn-outline-danger:not(:hover) {
     background-color: rgba($color: $danger, $alpha: 0.1);
+}
+
+/*
+ * Bootstrap tabs
+ */
+
+.nav-tabs {
+    padding: 4px 0;
+    border: none;
+    background-color: #111313;
+    justify-content: center;
+    flex-wrap: nowrap;
+}
+
+.nav-tabs > .nav-item {
+    flex-grow: 1;
+    max-width: 250px;
+}
+
+.nav-tabs > .nav-item > button:focus {
+    outline: auto;
+}
+
+/* https://stackoverflow.com/a/65431687 */
+.nav-tabs > .nav-item > button:focus:not(:focus-visible) {
+    outline: none;
+}
+
+.nav-tabs > .nav-item > .nav-link {
+    width: calc(100% - 4px);
+    padding: 2px 16px;
+    margin: 2px auto;
+    text-transform: uppercase;
+    font-family: "Roboto Condensed", sans-serif;
+    font-weight: bold;
+    border: none;
+    border-radius: 0;
+    color: #fefeca;
+    background-color: #111313;
+    transition: none;
+}
+
+@include color-mode(light) {
+    .nav-tabs {
+        background-color: #e4e4e4;
+    }
+
+    .nav-tabs > .nav-item > .nav-link {
+        color: black;
+        background-color: #e4e4e4;
+    }
+}
+
+.nav-tabs > .nav-item > .nav-link.active {
+    color: black;
+    /* https://cssgradient.io/ */
+    background: rgb(249, 225, 140); /* #f6cf65; */
+    background: radial-gradient(
+        circle,
+        rgba(249, 225, 140, 1) 33%,
+        rgba(255, 222, 110, 1) 100%
+    );
+    box-shadow: #f3d175d8 0 0 2px 2px;
 }
 
 /* ===== Scrollbar CSS ===== */

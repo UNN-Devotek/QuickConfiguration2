@@ -2,12 +2,18 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 
 import "@/assets/fonts/Overseer/overseer.css";
+import "@/assets/fonts/Overseer/overseer.ttf";
 
 // https://developer.mozilla.org/en-US/docs/Web/CSS/font-weight#common_weight_name_mapping
 // All weights need to be loaded for fonts to be rendered correctly:
+import "@fontsource/roboto-condensed/300.css"; // light
+import "@fontsource/roboto-condensed/400.css"; // normal (regular)
+import "@fontsource/roboto-condensed/700.css"; // bold
 import "@fontsource/roboto/300.css"; // light
 import "@fontsource/roboto/400.css"; // normal (regular)
 import "@fontsource/roboto/700.css"; // bold
+
+import "@fontsource/noto-mono";
 
 import "@/assets/styles/index.scss";
 

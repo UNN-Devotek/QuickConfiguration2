@@ -107,6 +107,62 @@ describe("Profiles", () => {
     expect(profile.gameEdition).toBe("SteamPTS");
   });
 
+  it("moveProfileUp should move profile up by index - 1", () => {
+    createTestState(3, 1);
+    const movedProfile = useProfilesStore.getState().profiles.at(1);
+    useProfilesStore.getState().moveProfileUp(1);
+
+    expect(movedProfile).toBeTruthy();
+    expect(useProfilesStore.getState().profiles.at(0)?.key).toBe(
+      movedProfile?.key,
+    );
+    expect(useProfilesStore.getState().profiles.at(1)?.key).not.toBe(
+      movedProfile?.key,
+    );
+    expect(useProfilesStore.getState().selected).toBe(movedProfile?.key);
+    expect(useProfilesStore.getState().getSelectedIndex()).toBe(0);
+  });
+
+  it("moveProfileUp shouldn't move profile if it's already at the top", () => {
+    createTestState(3, 1);
+    const movedProfile = useProfilesStore.getState().profiles.at(0);
+    useProfilesStore.getState().moveProfileUp(0);
+
+    expect(movedProfile).toBeTruthy();
+    expect(useProfilesStore.getState().profiles.at(0)?.key).toBe(
+      movedProfile?.key,
+    );
+    expect(useProfilesStore.getState().getSelectedIndex()).toBe(1);
+  });
+
+  it("moveProfileDown should move profile down by index + 1", () => {
+    createTestState(3, 1);
+    const movedProfile = useProfilesStore.getState().profiles.at(1);
+    useProfilesStore.getState().moveProfileDown(1);
+
+    expect(movedProfile).toBeTruthy();
+    expect(useProfilesStore.getState().profiles.at(2)?.key).toBe(
+      movedProfile?.key,
+    );
+    expect(useProfilesStore.getState().profiles.at(1)?.key).not.toBe(
+      movedProfile?.key,
+    );
+    expect(useProfilesStore.getState().selected).toBe(movedProfile?.key);
+    expect(useProfilesStore.getState().getSelectedIndex()).toBe(2);
+  });
+
+  it("moveProfileDown shouldn't move profile if it's already at the bottom", () => {
+    createTestState(3, 1);
+    const movedProfile = useProfilesStore.getState().profiles.at(2);
+    useProfilesStore.getState().moveProfileDown(2);
+
+    expect(movedProfile).toBeTruthy();
+    expect(useProfilesStore.getState().profiles.at(2)?.key).toBe(
+      movedProfile?.key,
+    );
+    expect(useProfilesStore.getState().getSelectedIndex()).toBe(1);
+  });
+
   it("deleteProfile should remove profile at specified index", () => {
     createTestState(3, 1);
     const deletedProfile = useProfilesStore.getState().profiles.at(1);
@@ -120,9 +176,7 @@ describe("Profiles", () => {
     expect(useProfilesStore.getState().profiles.at(1)?.key).not.toBe(
       deletedProfile?.key,
     );
-    expect(useProfilesStore.getState().selected).toBe(
-      useProfilesStore.getState().profiles[0].key,
-    );
+    expect(useProfilesStore.getState().getSelectedIndex()).toBe(0);
   });
 
   it("deleteProfile should remove profile at specified index at the start", () => {
@@ -155,8 +209,6 @@ describe("Profiles", () => {
     expect(useProfilesStore.getState().profiles.at(1)?.key).not.toBe(
       deletedProfile?.key,
     );
-    expect(useProfilesStore.getState().selected).toBe(
-      useProfilesStore.getState().profiles[1].key,
-    );
+    expect(useProfilesStore.getState().getSelectedIndex()).toBe(1);
   });
 });

@@ -9,7 +9,10 @@ pub use sso::*;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::{commands::errors::CommandResult, features::nexusmods};
+use crate::{
+    commands::errors::CommandResult,
+    features::nexusmods::{self, models::api::ModID},
+};
 
 #[derive(Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +38,12 @@ impl TryFrom<nexusmods::nxm::NXMLinkDetails> for NXMLinkDetails {
             user_id: value.user_id.try_into()?,
         })
     }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn nexusmods_extract_ids_from_url(url: String) -> CommandResult<(String, u32)> {
+    Ok(ModID::URL(url).into_ids()?)
 }
 
 #[tauri::command]

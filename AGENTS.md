@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A focused Fallout Chat Mod HUD and Server Bridge installer forked from Quick Configuration 2. It preserves the upstream profile and settings format. Linux and Windows are the tested targets.
+A configurator and mod manager for the video game Fallout 76. Primarily supports Windows and Linux, but also has some code paths for macOS (only secondary support).
 
 It's a Tauri 2.0 desktop application that is split into two parts:
 
@@ -11,7 +11,7 @@ It's a Tauri 2.0 desktop application that is split into two parts:
 
 **Project quirks:**
 - Bindings to Tauri commands and events are generated with `tauri-specta` into `./src/commands/bindings.ts` upon running `pnpm export-bindings`.
-- Only commands and events added in `./src-tauri/src/main.rs` using `collect_commands!` and `collect_events!` are accessable from the frontend.
+- Only commands and events added in `./tauri-src/src/main.rs` using `collect_commands!` and `collect_events!` are accessable from the frontend.
 
 ## Development Commands
 

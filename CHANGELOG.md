@@ -1,0 +1,85 @@
+## What's new in v2.0.0-beta.5
+
+This update adds the option to select an existing mod to update when installing a mod (through file/folder selection, drag and drop, or mod manager download from NexusMods).
+It also improves the performance of the file tree picker, so installing mods with a ton of files should be smoother.
+
+On Windows, users should no longer see a console window popup when extracting archives (e.g. while installing mods).
+Also, Linux users using [AppManager](https://github.com/kem-a/AppManager) should now be able to install the AppImage without error messages.
+
+- Added: Option to update an existing mod in the installing mod dialog
+- Improved: Order files alphabetically in the file selector tree in the installing mod dialog
+- Improved: Performance in the file selector tree in the installing mod dialog
+- Improved: Readme / text file buttons have proper gaps and maximum height in the installing mod dialog
+- Fixed: Console window spawning on Windows when creating/extracting archives
+- Fixed: Broken .DirIcon symlink in AppImage on Linux (upstream fix: [tauri-apps/tauri#15110](https://github.com/tauri-apps/tauri/issues/15110))
+- Misc: Updated Cargo and npm dependencies
+
+## What's new in v2.0.0-beta.4
+
+This update should fix issues with extracting RAR archives:
+
+- Updated: Bundling 7z instead of 7za for UnRAR support on Windows.
+- Added: More helpful error message if RAR archives cannot be extracted.
+- Added: Fallback to WinRAR to extract RAR archives if it is installed and 7-Zip doesn't support RAR extraction.
+- Fixed: If Windows was installed on a different drive than `C:`, then Steam should be found now.
+
+## What's new in v2.0.0-beta.3
+
+This update adds new game settings, automatic translation downloads and some smaller bug fixes:
+
+- Added: New game settings (throwing arc, item scrap prompts, locked item use, map region names)
+- Added: Automatic download of translations on app start (opt-out)
+- Added: Button to show custom resolution picker
+- Fixed: Show that deployment is necessary when reordering mods
+- Fixed: Create the `languages` folder when opening the translation folder from the app instead of displaying an error
+- Fixed: Prevent a possible race condition when saving profiles and settings which might have caused corruption / data loss
+- Fixed: Disable autocomplete suggestions on input fields
+- Fixed: Empty mods path was not set when game path was changed in the profile editing dialog in some situations
+
+## What's new in v2.0.0-beta.2
+
+A small bug fix update:
+
+- Added: "Remove game's archives" button in the resource list tab.
+- Fixed: Switching the resource list in the mod manager should now switch it in the `Fallout76Custom.ini` file instead of leaving duplicates.
+- Fixed: The toast message that an update is available should no longer be shown on start, unless there really is an update.
+- Fixed: The resource list tab might not have refreshed the list properly when the number of items didn't change.
+
+## What's new in v2.0.0-beta.1
+
+This is the first beta release of version 2, a complete rewrite of the old Quick Configuration.
+
+**New Features & Improvements**
+
+- **Mod Manager:**
+  - Redesigned mod order tab (new search bar, improved installation/import dialogs)
+  - Overhauled resource list tab (displays associated mod title, file size, and whether the \*.ba2 file exists)
+  - Multiple BA2 archives can be managed per mod now
+  - Config files preserved (no longer overwritten)
+  - Resource lists in ini file respected (no longer overwritten)
+  - Additional Archive2 actions (create, extract, auto-bundle archives)
+- **Linux:**
+  - Native builds for Steam Deck and Linux (\*.AppImage recommended)
+  - Full support and feature parity with Windows
+  - Automatic detection of game installation and config paths
+- **UI/UX:** Modernized, high DPI support, web-based interface
+- **Translations:** Changed from XML to JSON format
+- **Security:** Cryptographically signed updates
+- **CI/CD:** GitHub Actions pipeline for automated and consistent release builds
+- And more...
+
+**Regressions & Removals**
+
+- **Mod Manager:**
+  - Drag-and-drop requires a new window due to technical limitations
+  - Removed automatic bundling of archives (manual bundling via Archive2 menu in mod manager possible)
+- **Custom Tweaks:** Removed custom tweaks page (please edit `.ini` files directly)
+- **Gallery:** Limited to photos/screenshots (other features unavailable, e.g. custom folder paths)
+- **Windows:** Dropped support for Windows 7 (Windows 10 untested, Windows 11 recommended)
+- **Backups:** Removed automatic `.ini` backups (manual backups recommended)
+
+**Compatibility**
+
+- Drop-in replacement for v1.12.9 (most settings carried over)
+
+For more details about the changes, see this wiki article: [What changed?](https://github.com/FelisDiligens/QuickConfiguration2/wiki/What-changed)

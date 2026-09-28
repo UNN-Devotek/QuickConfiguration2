@@ -1,49 +1,336 @@
+import { commands, Theme } from "@/commands/bindings";
+import { commandErrorToString } from "@/commands/errors";
+import AccordionRow from "@/components/common/AccordionRow";
+import ButtonRow from "@/components/common/ButtonRow";
+import ComboRow from "@/components/common/ComboRow";
+import { PageErrorAlert } from "@/components/common/ErrorAlert";
+import { FlexCol, FlexRow } from "@/components/common/Flex";
+import PageAlert from "@/components/common/PageAlert";
+import PageContainer from "@/components/common/PageContainer";
+import PageTitle from "@/components/common/PageTitle";
+import PreferencesGroup from "@/components/common/PreferencesGroup";
+import RadioRow from "@/components/common/RadioRow";
+import RadioRowGroup from "@/components/common/RadioRowGroup";
+import SwitchRow from "@/components/common/SwitchRow";
+import { useTranslationUpdateState } from "@/hooks/translations";
+import { useTranslationsStore } from "@/lib/i18n/store";
+import { translationUpdateService } from "@/services/translations";
 import { useSettingsStore } from "@/stores/settings";
-import { open } from "@tauri-apps/plugin-dialog";
-import { Button, Form } from "react-bootstrap";
+import { useToastsStore } from "@/stores/toasts";
+import { css } from "@emotion/react";
+import {
+  faChevronRight,
+  faDownload,
+  faFileCirclePlus,
+  faFileLines,
+  faInfoCircle,
+  faRefresh,
+} from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import * as dialog from "@tauri-apps/plugin-dialog";
+import i18next from "i18next";
+import { ListGroup, Spinner } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
 export default function SettingsView() {
+  const navigate = useNavigate();
   const { t } = useTranslation();
-  const downloadPath = useSettingsStore(
-    (store) => store.modManager.downloadPath,
+
+  /* Settings store */
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
+  const useGameCursor = useSettingsStore((s) => s.useGameCursor);
+  const setUseGameCursor = useSettingsStore((s) => s.setUseGameCursor);
+  const language = useSettingsStore((s) => s.language);
+  const setLanguage = useSettingsStore((s) => s.setLanguage);
+  const fetchServerStatusOnStart = useSettingsStore(
+    (s) => s.fetchServerStatusOnStart,
   );
-  const setModManagerSettings = useSettingsStore(
-    (store) => store.setModManagerSettings,
+  const setFetchServerStatusOnStart = useSettingsStore(
+    (s) => s.setFetchServerStatusOnStart,
+  );
+  const downloadTranslationsOnStart = useSettingsStore(
+    (s) => s.downloadTranslationsOnStart,
+  );
+  const setDownloadTranslationsOnStart = useSettingsStore(
+    (s) => s.setDownloadTranslationsOnStart,
+  );
+  const quitOnGameLaunch = useSettingsStore((s) => s.quitOnGameLaunch);
+  const setQuitOnGameLaunch = useSettingsStore((s) => s.setQuitOnGameLaunch);
+  const migratedFromV1 = useSettingsStore((s) => s.migratedFromV1);
+  const setMigrationDismissed = useSettingsStore(
+    (s) => s.setMigrationDismissed,
   );
 
-  async function browse() {
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === "string") {
-      setModManagerSettings((settings) => ({
-        ...settings,
-        downloadPath: selected,
-      }));
-    }
-  }
+  /* Translations store and actions */
+  const translations = useTranslationsStore((s) => s.translations);
+  const translationsLoadState = {
+    parseErrors: useTranslationsStore((s) => s.parseErrors),
+    error: useTranslationsStore((s) => s.error),
+    isPending: useTranslationsStore((s) => s.isPending),
+  };
+  const translationsDownloadState = useTranslationUpdateState();
+  const loadTranslations = useTranslationsStore((s) => s.loadTranslations);
+  const storeCreateTranslationTemplate = useTranslationsStore(
+    (s) => s.createTranslationTemplate,
+  );
+
+  const translationsPending =
+    translationsLoadState.isPending || translationsDownloadState.isPending;
+
+  const downloadTranslations = () => {
+    translationUpdateService
+      .update()
+      .then((newTranslations) => {
+        if (newTranslations == null) return;
+        if (newTranslations.length > 0) {
+          useToastsStore.getState().addToast(
+            t("updates.toasts.translationsDownloaded"),
+            t("updates.toasts.translationsDownloadedText", {
+              count: newTranslations.length,
+              files: newTranslations.join(", "),
+            }),
+            "success",
+          );
+        } else {
+          useToastsStore
+            .getState()
+            .addToast(t("updates.toasts.noTranslationsDownloaded"), "");
+        }
+      })
+      .catch(console.error);
+  };
+
+  const createTranslationTemplate = () => {
+    storeCreateTranslationTemplate(i18next.language)
+      .then((filename) => {
+        dialog
+          .message(
+            t("settings.localization.templateCreated", { file: filename }),
+            {
+              title: t("common.success"),
+              kind: "info",
+            },
+          )
+          .catch((error) =>
+            console.error(`Couldn't show Tauri message dialog: ${error}`),
+          );
+      })
+      .catch((reason) =>
+        dialog
+          .message(
+            t("settings.localization.templateCreated", {
+              reason: commandErrorToString(reason),
+            }),
+            {
+              title: t("errors.anErrorOccurred"),
+              kind: "error",
+            },
+          )
+          .catch((error) =>
+            console.error(`Couldn't show Tauri message dialog: ${error}`),
+          ),
+      );
+  };
 
   return (
-    <main className="container-fluid p-4" style={{ maxWidth: 840 }}>
-      <h1>{t("installer.downloadsTab")}</h1>
-      <p>{t("installer.downloadsIntro")}</p>
-      <Form.Label htmlFor="download-path">
-        {t("installer.downloadFolder")}
-      </Form.Label>
-      <div className="d-flex gap-2">
-        <Form.Control
-          id="download-path"
-          value={downloadPath}
-          onChange={(event) =>
-            setModManagerSettings((settings) => ({
-              ...settings,
-              downloadPath: event.target.value,
-            }))
-          }
-        />
-        <Button onClick={() => void browse()}>{t("installer.browse")}</Button>
+    <PageContainer>
+      <PageTitle>{t("settings.title")}</PageTitle>
+      <div>
+        {migratedFromV1 && !migratedFromV1.dismissed && (
+          <PageAlert variant="secondary">
+            <FontAwesomeIcon icon={faInfoCircle} />
+            &nbsp;&nbsp;
+            <span>
+              {t("settings.migrationInfo", {
+                ...migratedFromV1,
+                date: new Date(migratedFromV1.date),
+                formatParams: {
+                  date: {
+                    year: "numeric",
+                    month: "numeric",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "numeric",
+                  },
+                },
+              })}
+              &nbsp;
+              <a
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setMigrationDismissed(true);
+                }}
+              >
+                {t("settings.dismissMigrationInfo")}
+              </a>
+            </span>
+          </PageAlert>
+        )}
+        {translationsLoadState.error && (
+          <PageErrorAlert reason={translationsLoadState.error} />
+        )}
+        {translationsDownloadState.error && (
+          <PageErrorAlert reason={translationsDownloadState.error} />
+        )}
+        {translationsLoadState.parseErrors.length > 0 &&
+          translationsLoadState.parseErrors.map((error) => (
+            <PageAlert key={error.key} variant="danger">
+              <FlexRow>
+                <span>
+                  <b>
+                    {t("settings.localization.couldNotLoadTranslation", {
+                      file: error.fileName,
+                    })}
+                  </b>
+                  &nbsp;
+                  {error.message}
+                </span>
+              </FlexRow>
+            </PageAlert>
+          ))}
+        <PreferencesGroup title={t("settings.localization.title")}>
+          {translationsPending && (
+            <ListGroup.Item>
+              <FlexRow center gap="1rem" css={css`padding: 10px 0;`}>
+                <FlexCol noGrow noShrink>
+                  <Spinner animation="border" role="status">
+                    <span className="visually-hidden">Pending...</span>
+                  </Spinner>
+                </FlexCol>
+                <FlexCol>
+                  {translationsDownloadState.isPending
+                    ? t("settings.localization.downloadingTranslations")
+                    : t("settings.localization.loadingTranslations")}
+                </FlexCol>
+              </FlexRow>
+            </ListGroup.Item>
+          )}
+          {!translationsPending && translations && (
+            <ComboRow
+              title={t("settings.localization.language")}
+              value={language || undefined}
+              onChange={setLanguage}
+            >
+              {translations.map(({ key, name }) => (
+                <option key={key} value={key}>
+                  {name}
+                </option>
+              ))}
+            </ComboRow>
+          )}
+          <AccordionRow
+            collapsedLabel={t("common.showMore")}
+            expandedLabel={t("common.showLess")}
+          >
+            <ButtonRow
+              center
+              onClick={() => downloadTranslations()}
+              disabled={translationsPending}
+            >
+              <FontAwesomeIcon icon={faDownload} />
+              <span css={css`margin-left: 10px;`}>
+                {t("settings.localization.downloadTranslationsButton")}
+              </span>
+            </ButtonRow>
+            <ButtonRow
+              center
+              onClick={() => loadTranslations()}
+              disabled={translationsPending}
+            >
+              <FontAwesomeIcon icon={faRefresh} />
+              <span css={css`margin-left: 10px;`}>
+                {t("settings.localization.reloadTranslationsButton")}
+              </span>
+            </ButtonRow>
+            <ButtonRow
+              center
+              onClick={() => createTranslationTemplate()}
+              disabled={translationsPending}
+            >
+              <FontAwesomeIcon icon={faFileCirclePlus} />
+              <span css={css`margin-left: 10px;`}>
+                {t("settings.localization.createTemplateButton")}
+              </span>
+            </ButtonRow>
+          </AccordionRow>
+        </PreferencesGroup>
+
+        <PreferencesGroup title={t("settings.theme.title")}>
+          <RadioRowGroup
+            name="theme"
+            value={theme}
+            onChange={(id) => setTheme(id as Theme)}
+          >
+            <RadioRow title={t("settings.theme.light")} id="light" />
+            <RadioRow title={t("settings.theme.dark")} id="dark" />
+            <RadioRow
+              title={t("settings.theme.system")}
+              subtitle={t("common.autoDetect")}
+              id="system"
+            />
+          </RadioRowGroup>
+        </PreferencesGroup>
+
+        <PreferencesGroup title={t("settings.appearance.title")}>
+          <SwitchRow
+            title={t("settings.appearance.useGameCursor")}
+            checked={useGameCursor}
+            onChange={setUseGameCursor}
+          />
+        </PreferencesGroup>
+
+        <PreferencesGroup title={t("settings.behavior.title")}>
+          <SwitchRow
+            title={t("settings.behavior.quitOnGameLaunch")}
+            subtitle={t("settings.behavior.quitOnGameLaunchSubtitle")}
+            checked={quitOnGameLaunch}
+            onChange={setQuitOnGameLaunch}
+          />
+          <SwitchRow
+            title={t("settings.behavior.fetchServerStatusOnStart")}
+            subtitle={t("settings.behavior.fetchServerStatusOnStartSubtitle")}
+            checked={fetchServerStatusOnStart}
+            onChange={setFetchServerStatusOnStart}
+          />
+          <SwitchRow
+            title={t("settings.behavior.downloadTranslations")}
+            subtitle={t("settings.behavior.downloadTranslationsSubtitle")}
+            checked={downloadTranslationsOnStart}
+            onChange={setDownloadTranslationsOnStart}
+          />
+        </PreferencesGroup>
+
+        <PreferencesGroup title={t("settings.debug.title")}>
+          <ButtonRow
+            center
+            onClick={() => commands.openLogFile().catch(console.error)}
+          >
+            <FontAwesomeIcon icon={faFileLines} />
+            <span css={css`margin-left: 10px;`}>
+              {t("settings.debug.openLogButton")}
+            </span>
+          </ButtonRow>
+        </PreferencesGroup>
+
+        <PreferencesGroup
+          title={t("settings.profiles.title")}
+          subtitle={t("settings.profiles.subtitle")}
+        >
+          <ButtonRow
+            onClick={() => navigate("/profiles")}
+            iconRight={<FontAwesomeIcon icon={faChevronRight} />}
+          >
+            {t("settings.profiles.goToProfiles")}
+          </ButtonRow>
+        </PreferencesGroup>
       </div>
-    </main>
+    </PageContainer>
   );
 }
 
+// Stub for React Router v6
 export const Component: React.FC = SettingsView;
+Component.displayName = "SettingsView";

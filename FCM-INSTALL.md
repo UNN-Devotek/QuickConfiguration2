@@ -1,6 +1,6 @@
 # Fallout Chat Mod package import
 
-Use the main **Install mod** screen or drag a package onto the app window to add a production
+Use **Mods → Install mod** or the usual drag-and-drop window to add a production
 FCM package. Quick Configuration recognizes the visible HUD ZIP, its ZFE or
 xScal provider folder, and the optional Server Bridge folder inside Windows
 setup, portable, or Linux overlay ZIPs. It reviews the FCM file changes in the
@@ -26,8 +26,9 @@ The imported package supplies its version: the HUD's
 production installation metadata or BA2 stamp, and the bridge's production
 `BUILD.json` and BA2 checksum. The installer validates the selected provider and
 required files. It does not fetch a different FCM release or silently replace
-the package you selected. An incomplete FCM package fails instead of entering a generic mod
-deployment path. To remove the active FCM mod, use **Remove FCM** on the main screen.
+the package you selected. An incomplete FCM package fails instead of entering the generic mod
+deployment path. To remove the active FCM mod, use **Mods → More → Remove FCM
+mod**.
 
 The installer backs up every changed file under the app configuration directory's
 `fcm-backups/` folder and displays that backup path when complete. It merges
@@ -42,10 +43,12 @@ its loader/archive entries; it keeps editable FCM configuration files so user
 customizations are not lost. Restore a backup manually if an earlier setup is
 needed. A changed file between preview and apply blocks the operation.
 
-The focused fork no longer has a general INI editor or background resource-list save.
-The installer reads current files at preview and rechecks them at apply, so a
-change between those steps blocks the operation. The fork does not contact or
-install updates from the upstream Quick Configuration release channel.
+Quick Configuration's normal INI save now checks whether any file changed on
+disk since it was loaded. If so, it refuses to overwrite the newer file and
+asks you to reload. Normal saves write only changed keys and preserve unrelated
+lines and comments. After a guided install, the UI reloads its INI and resource
+list state. The fork does not contact or install updates from the upstream
+Quick Configuration release channel.
 
 On Linux systems using NVIDIA, a blank or partly rendered window may require
 starting the AppImage with `WEBKIT_DISABLE_DMABUF_RENDERER=1`. The included
@@ -72,7 +75,7 @@ Server Bridge behavior require separate in-game verification.
 ## Headless Linux acceptance
 
 The opt-in Rust acceptance test runs the same package detection, preview,
-planning, and apply code as the main **Install mod** screen without opening the app.
+planning, and apply code as **Mods → Install mod** without opening the app.
 Provide the downloaded production Linux overlay ZIP and HUD ZIP, plus the game
 and active Proton INI directories:
 

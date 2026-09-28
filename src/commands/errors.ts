@@ -1,3 +1,5 @@
+import { platform } from "@tauri-apps/plugin-os";
+import { t } from "i18next";
 import objectInspect from "object-inspect";
 import { CommandError, SerializableCommandResult } from "./bindings";
 
@@ -9,7 +11,7 @@ export function unwrap<T>(result: SerializableCommandResult<T>): T {
     case "ok":
       return result.value;
     case "error":
-      throw result.value;
+      throw result.status;
   }
 }
 
@@ -48,6 +50,10 @@ export function commandErrorToString(error: AnyError) {
     typeof error.message === "string" &&
     typeof error.variant === "string"
   ) {
+    if (error.type === "SevenzipError" && error.variant === "RARNotSupported")
+      return t("errors.rarNotSupported." + platform());
+    if (error.type === "SevenzipError" && error.variant === "SevenzipNotFound")
+      return t("errors.7zNotFound." + platform());
     return `${error.type}::${error.variant}: ${error.message}`;
   } else if (
     "type" in error &&
@@ -94,4 +100,13 @@ export function commandErrorIsIniParseError(
   if (!error || typeof error === "string" || error instanceof Error)
     return false;
   return error.type === "IniParseError";
+}
+
+export type Archive2Error = Extract<CommandError, { type: "Archive2Error" }>;
+export function commandErrorIsArchive2Error(
+  error: AnyError,
+): error is Archive2Error {
+  if (!error || typeof error === "string" || error instanceof Error)
+    return false;
+  return error.type === "Archive2Error";
 }

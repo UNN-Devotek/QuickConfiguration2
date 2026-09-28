@@ -30,6 +30,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, "index.html"),
+        dnd: path.resolve(__dirname, "dnd-window.html"),
       },
     },
   },
