@@ -45,22 +45,58 @@ fn merge_changed_keys(baseline: &[u8], desired: &Ini) -> CommandResult<Vec<u8>> 
             }
         }
     }
-    let previous_global: Vec<_> = previous
-        .section(None::<&str>)
-        .into_iter()
-        .flat_map(|props| props.iter())
-        .collect();
-    let desired_global: Vec<_> = desired
-        .section(None::<&str>)
-        .into_iter()
-        .flat_map(|props| props.iter())
-        .collect();
-    if previous_global != desired_global {
-        return Err(CommandError::String {
-            message: "Unsectioned INI changes need manual editing".to_owned(),
-        });
+    if let Some(properties) = previous.section(None::<&str>) {
+        for (key, value) in properties.iter() {
+            if desired.get_from(None::<&str>, key) != Some(value) {
+                merged = update_global_key(&merged, key, desired.get_from(None::<&str>, key))?;
+            }
+        }
+    }
+    if let Some(properties) = desired.section(None::<&str>) {
+        for (key, value) in properties.iter() {
+            if previous.get_from(None::<&str>, key).is_none() {
+                merged = update_global_key(&merged, key, Some(value))?;
+            }
+        }
     }
     Ok(merged.into_bytes())
+}
+
+fn update_global_key(input: &str, key: &str, value: Option<&str>) -> CommandResult<String> {
+    let newline = if input.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut lines: Vec<String> = input
+        .lines()
+        .map(|line| line.trim_end_matches('\r').to_owned())
+        .collect();
+    let first_section = lines
+        .iter()
+        .position(|line| line.trim().starts_with('[') && line.trim().ends_with(']'))
+        .unwrap_or(lines.len());
+    let matches: Vec<usize> = (0..first_section)
+        .filter(|index| {
+            lines[*index]
+                .split_once('=')
+                .is_some_and(|(candidate, _)| candidate.trim().eq_ignore_ascii_case(key))
+        })
+        .collect();
+    if matches.len() > 1 {
+        return Err(CommandError::String {
+            message: format!("Duplicate unsectioned {key} key"),
+        });
+    }
+    match (matches.first().copied(), value) {
+        (Some(index), Some(value)) => lines[index] = format!("{key}={value}"),
+        (Some(index), None) => {
+            lines.remove(index);
+        }
+        (None, Some(value)) => lines.insert(first_section, format!("{key}={value}")),
+        (None, None) => {}
+    }
+    Ok(format!(
+        "{}{}",
+        lines.join(newline),
+        if lines.is_empty() { "" } else { newline }
+    ))
 }
 
 #[duplicate_item(
@@ -401,6 +437,52 @@ mod external_edit_tests {
         assert!(after.starts_with("; player note\r\n"));
         assert!(after.contains("sResourceArchive2List=Other.ba2,FCMChatWidget.ba2\r\n"));
         assert!(after.contains("keep=changed\r\n"));
+        Ok(())
+    }
+
+    #[test]
+    fn normal_save_updates_unsectioned_keys_without_rewriting_other_lines() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(dir.path().join("Fallout76.ini"), "[Display]\nfoo=1\n")?;
+        std::fs::write(dir.path().join("Fallout76Prefs.ini"), "[Display]\nfoo=1\n")?;
+        let custom = dir.path().join("Fallout76Custom.ini");
+        std::fs::write(
+            &custom,
+            "; note\r\nGlobalSetting=old\r\nRemovedSetting=gone\r\n[Archive]\r\nsResourceArchive2List=FCMChatWidget.ba2\r\n",
+        )?;
+        let main = Arc::new(Mutex::new(Ini::new()));
+        let prefs = Arc::new(Mutex::new(Ini::new()));
+        let custom_state = Arc::new(Mutex::new(Ini::new()));
+        let baselines = Arc::new(Mutex::new(HashMap::new()));
+        let path = dir.path().display().to_string();
+        _ini_load(
+            path.clone(),
+            "Fallout76".to_owned(),
+            main.clone(),
+            prefs.clone(),
+            custom_state.clone(),
+            baselines.clone(),
+        )?;
+        let mut state = custom_state
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        state.set_to(None::<&str>, "GlobalSetting".to_owned(), "new".to_owned());
+        state.set_to(None::<&str>, "AddedSetting".to_owned(), "yes".to_owned());
+        state.delete_from(None::<&str>, "RemovedSetting");
+        drop(state);
+        _ini_save(
+            path,
+            "Fallout76".to_owned(),
+            main,
+            prefs,
+            custom_state,
+            baselines,
+        )?;
+        let after = std::fs::read_to_string(custom)?;
+        assert!(after.starts_with("; note\r\nGlobalSetting=new\r\n"));
+        assert!(after.contains("AddedSetting=yes\r\n"));
+        assert!(!after.contains("RemovedSetting"));
+        assert!(after.contains("sResourceArchive2List=FCMChatWidget.ba2\r\n"));
         Ok(())
     }
 }

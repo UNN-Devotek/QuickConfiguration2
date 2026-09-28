@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "Fallout 76 Quick Configuration",
   "mainBinaryName": "f76qc2",
-  "version": "2.0.0-beta.7",
+  "version": "2.0.0-beta.8",
   "identifier": "io.github.felisdiligens.QuickConfiguration2",
   "build": {
     "beforeDevCommand": "pnpm run vite:dev",
@@ -57,7 +57,14 @@
     "macOS": {
       "minimumSystemVersion": "14.6"
     },
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": true
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEyNTM2ODEwMjREQzY2RjMKUldUelp0d2tFR2hUb25haEVwSS9vUDNBdXVKYm1veGVzNURlS0NrWmJhYnovRWVudDFDck9LeDYK",
+      "endpoints": [
+        "https://github.com/FelisDiligens/QuickConfiguration2/releases/latest/download/latest.json"
+      ]
+    }
+  }
 }

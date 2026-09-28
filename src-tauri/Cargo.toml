@@ -1,6 +1,6 @@
 [package]
 name = "f76qc2"
-version = "2.0.0-beta.7"
+version = "2.0.0-beta.8"
 description = "Fallout 76 Quick Configuration"
 authors = ["FelisDiligens"]
 license = "MIT"
@@ -22,6 +22,7 @@ tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
 # Tauri Specta (beta)

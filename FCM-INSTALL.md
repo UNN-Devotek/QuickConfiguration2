@@ -47,8 +47,11 @@ Quick Configuration's normal INI save now checks whether any file changed on
 disk since it was loaded. If so, it refuses to overwrite the newer file and
 asks you to reload. Normal saves write only changed keys and preserve unrelated
 lines and comments. After a guided install, the UI reloads its INI and resource
-list state. The fork does not contact or install updates from the upstream
-Quick Configuration release channel.
+list state. The fork retains Quick Configuration's upstream update check and
+installation controls. Installing an upstream update can replace this fork's
+FCM integration, so reinstall a fork build afterward if that happens.
+Local unsigned builds and fork CI use `src-tauri/tauri.fcm-unsigned.conf.json`
+to omit updater signature artifacts while keeping the upstream updater in the app.
 
 On Linux systems using NVIDIA, a blank or partly rendered window may require
 starting the AppImage with `WEBKIT_DISABLE_DMABUF_RENDERER=1`. The included
