@@ -32,6 +32,9 @@ pub fn fcm_preview_import(
     ini_path: String,
     ini_prefix: String,
     paths: Vec<String>,
+    selected_provider: Option<String>,
+    provider_package: Option<String>,
+    loader_package: Option<String>,
     state: State<'_, FcmPlans>,
 ) -> CommandResult<FcmPreview> {
     Ok(import::preview_import(
@@ -39,8 +42,86 @@ pub fn fcm_preview_import(
         &ini_path,
         &ini_prefix,
         &paths,
+        selected_provider.as_deref(),
+        provider_package.as_deref(),
+        loader_package.as_deref(),
         &state,
     )?)
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FcmPrerequisites {
+    pub provider: Option<String>,
+    pub hud_mod_loader: bool,
+}
+
+fn probe_prerequisites(game: &Path) -> Result<FcmPrerequisites> {
+    ensure!(
+        game.join("Fallout76.exe").is_file(),
+        "Select the Fallout 76 game directory"
+    );
+    let dll_path = game.join("dxgi.dll");
+    let provider = if dll_path.exists() {
+        ensure!(
+            fs::metadata(&dll_path)?.len() <= 100 * 1024 * 1024,
+            "Provider DLL is unexpectedly large"
+        );
+        let dll = fs::read(&dll_path)?;
+        let xscal = dll
+            .windows(b"xscalchatv1".len())
+            .any(|part| part.eq_ignore_ascii_case(b"xscalchatv1"));
+        let zfe = dll
+            .windows(b"zfe-chat-v1".len())
+            .any(|part| part.eq_ignore_ascii_case(b"zfe-chat-v1"));
+        match (xscal, zfe) {
+            (true, false) => {
+                ensure!(
+                    game.join("xscal.ini").is_file(),
+                    "xScal requires xscal.ini beside the game"
+                );
+                Some("xscal".to_owned())
+            }
+            (false, true) => Some("zfe".to_owned()),
+            _ => bail!(
+                "dxgi.dll is already present but is not exactly one supported provider; resolve it before installing FCM"
+            ),
+        }
+    } else {
+        None
+    };
+    Ok(FcmPrerequisites {
+        provider,
+        hud_mod_loader: game.join("Data/HUDModLoader.ba2").is_file()
+            && game.join("Data/hudmodloader.ini").is_file(),
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn fcm_probe_prerequisites(game_path: String) -> CommandResult<FcmPrerequisites> {
+    Ok(probe_prerequisites(Path::new(&game_path))?)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fcm_prerequisite_download_links(
+    api_key: String,
+    mod_id: u32,
+    file_id: u32,
+) -> CommandResult<Vec<crate::features::nexusmods::models::json::DownloadLink>> {
+    if ![4065, 4183, 3144].contains(&mod_id) {
+        return Err(anyhow::anyhow!("Unsupported prerequisite source").into());
+    }
+    Ok(crate::features::nexusmods::api::NexusModsAPI::new(api_key)
+        .request_download_links(
+            "fallout76".to_owned(),
+            mod_id.into(),
+            file_id.into(),
+            None,
+            None,
+        )
+        .await?)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Type, PartialEq, Eq)]
@@ -228,37 +309,9 @@ fn game_running() -> bool {
 }
 
 fn provider(game: &Path) -> Result<String> {
-    ensure!(
-        game.join("Fallout76.exe").is_file(),
-        "Select the Fallout 76 game directory"
-    );
-    ensure!(
-        game.join("Data/HUDModLoader.ba2").is_file(),
-        "Install HUDModLoader first"
-    );
-    let dll_path = game.join("dxgi.dll");
-    ensure!(
-        fs::metadata(&dll_path)
-            .context("Install ZFE or xScal first")?
-            .len()
-            <= 100 * 1024 * 1024,
-        "Provider DLL is unexpectedly large"
-    );
-    let dll = fs::read(dll_path)?;
-    let dll = String::from_utf8_lossy(&dll).to_ascii_lowercase();
-    let xscal = dll.contains("xscalchatv1");
-    let zfe = dll.contains("zfe-chat-v1");
-    match (xscal, zfe) {
-        (true, false) => {
-            ensure!(
-                game.join("xscal.ini").is_file(),
-                "xScal requires xscal.ini beside the game"
-            );
-            Ok("xscal".to_owned())
-        }
-        (false, true) => Ok("zfe".to_owned()),
-        _ => bail!("Could not identify exactly one supported provider in dxgi.dll"),
-    }
+    let probe = probe_prerequisites(game)?;
+    ensure!(probe.hud_mod_loader, "Install HUDModLoader first");
+    probe.provider.context("Install ZFE or xScal first")
 }
 
 fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
@@ -453,6 +506,30 @@ fn make_plan(
     info: Option<&FcmPackageInfo>,
     package: Vec<(PathBuf, Vec<u8>)>,
 ) -> Result<(Plan, FcmPreview)> {
+    make_plan_with_prerequisites(
+        game,
+        ini_dir,
+        prefix,
+        action,
+        info,
+        package,
+        None,
+        Vec::new(),
+        None,
+    )
+}
+
+fn make_plan_with_prerequisites(
+    game: &Path,
+    ini_dir: &Path,
+    prefix: &str,
+    action: FcmAction,
+    info: Option<&FcmPackageInfo>,
+    package: Vec<(PathBuf, Vec<u8>)>,
+    requested_provider: Option<&str>,
+    prerequisites: Vec<(PathBuf, Vec<u8>)>,
+    loader_default: Option<String>,
+) -> Result<(Plan, FcmPreview)> {
     ensure!(!game_running(), "Close Fallout 76 before changing mods");
     ensure!(
         prefix == "Fallout76" || prefix == "Project76",
@@ -464,6 +541,34 @@ fn make_plan(
     );
     let selected_provider = if action == FcmAction::Remove {
         "not required".to_owned()
+    } else if let Some(requested) = requested_provider {
+        ensure!(
+            requested == "zfe" || requested == "xscal",
+            "Unsupported provider"
+        );
+        let probe = probe_prerequisites(game)?;
+        ensure!(
+            probe
+                .provider
+                .as_deref()
+                .is_none_or(|existing| existing == requested),
+            "The installed provider differs from the selected provider"
+        );
+        ensure!(
+            probe.provider.is_some()
+                || prerequisites
+                    .iter()
+                    .any(|(path, _)| path == Path::new("dxgi.dll")),
+            "The selected provider package is missing"
+        );
+        ensure!(
+            probe.hud_mod_loader
+                || prerequisites
+                    .iter()
+                    .any(|(path, _)| path == Path::new("Data/HUDModLoader.ba2")),
+            "The HUDModLoader package is missing"
+        );
+        requested.to_owned()
     } else {
         provider(game)?
     };
@@ -479,8 +584,36 @@ fn make_plan(
         .map(String::from_utf8)
         .transpose()?
         .unwrap_or_default();
+    let loader_base = if loader.exists() {
+        loader_before.clone()
+    } else {
+        loader_default.unwrap_or_default()
+    };
     let installed = current_mode(&loader_before)?;
     let mut changes = Vec::new();
+    for (relative, bytes) in prerequisites {
+        ensure!(
+            matches!(
+                relative.to_str(),
+                Some("dxgi.dll" | "xscal.ini" | "Data/HUDModLoader.ba2")
+            ),
+            "Unexpected prerequisite file"
+        );
+        let path = game.join(&relative);
+        if relative != Path::new("Data/HUDModLoader.ba2") {
+            ensure!(
+                !path.exists(),
+                "Prerequisite changed since detection: {}",
+                path.display()
+            );
+        }
+        add_change(
+            &mut changes,
+            path,
+            Some(bytes),
+            "Install selected prerequisite",
+        )?;
+    }
     let expected_ba2 = match action {
         FcmAction::InstallHud => "FCMChatWidget.ba2",
         FcmAction::InstallBridge => "FCMServerBridge.ba2",
@@ -497,7 +630,16 @@ fn make_plan(
     for (relative, bytes) in package {
         if relative == Path::new("xscal.ini.example") {
             let path = game.join("xscal.ini");
-            let before = fs::read_to_string(&path)?;
+            let before = if let Some(change) = changes.iter().find(|change| change.path == path) {
+                String::from_utf8(
+                    change
+                        .after
+                        .clone()
+                        .context("Missing planned xScal settings")?,
+                )?
+            } else {
+                fs::read_to_string(&path)?
+            };
             let example = String::from_utf8(bytes)?;
             let enabled = ini_value(&example, "Chat", "enabled")?
                 .context("HUD package has no xScal Chat enabled value")?;
@@ -505,12 +647,16 @@ fn make_plan(
                 .context("HUD package has no xScal relay endpoint")?;
             let merged = ini_update(&before, "Chat", "enabled", Some(&enabled))?;
             let merged = ini_update(&merged, "Chat", "relayEndpoint", Some(&endpoint))?;
-            add_change(
-                &mut changes,
-                path,
-                Some(merged.into_bytes()),
-                "Merge xScal chat settings",
-            )?;
+            if let Some(change) = changes.iter_mut().find(|change| change.path == path) {
+                change.after = Some(merged.into_bytes());
+            } else {
+                add_change(
+                    &mut changes,
+                    path,
+                    Some(merged.into_bytes()),
+                    "Merge xScal chat settings",
+                )?;
+            }
         } else {
             let path = game.join(&relative);
             if relative
@@ -523,7 +669,7 @@ fn make_plan(
             add_change(&mut changes, path, Some(bytes), "Install FCM package file")?;
         }
     }
-    let loader_after = loader_text(&loader_before, action);
+    let loader_after = loader_text(&loader_base, action);
     add_change(
         &mut changes,
         loader,
@@ -709,9 +855,13 @@ mod tests {
         fs::create_dir_all(game.join("Data"))?;
         fs::write(game.join("Fallout76.exe"), b"")?;
         fs::write(game.join("Data/HUDModLoader.ba2"), b"BTDX")?;
+        fs::write(game.join("Data/hudmodloader.ini"), b"OtherChild\n")?;
         fs::write(game.join("xscal.ini"), b"[Chat]\nenabled=true\n")?;
         fs::write(game.join("dxgi.dll"), b"XSCALCHATV1 GetZFERuntimeInfo")?;
         assert_eq!(provider(game)?, "xscal");
+        fs::remove_file(game.join("Data/hudmodloader.ini"))?;
+        assert!(!probe_prerequisites(game)?.hud_mod_loader);
+        fs::write(game.join("Data/hudmodloader.ini"), b"OtherChild\n")?;
         fs::write(game.join("dxgi.dll"), b"zfe-chat-v1 xScal compatibility")?;
         assert_eq!(provider(game)?, "zfe");
         fs::write(game.join("dxgi.dll"), b"XSCALCHATV1 zfe-chat-v1")?;

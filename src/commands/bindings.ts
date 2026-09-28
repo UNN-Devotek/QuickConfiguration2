@@ -88,8 +88,14 @@ async fcmPreviewRemove(gamePath: string, iniPath: string, iniPrefix: string) : P
 async fcmDetectImport(paths: string[]) : Promise<boolean> {
     return await TAURI_INVOKE("fcm_detect_import", { paths });
 },
-async fcmPreviewImport(gamePath: string, iniPath: string, iniPrefix: string, paths: string[]) : Promise<FcmPreview> {
-    return await TAURI_INVOKE("fcm_preview_import", { gamePath, iniPath, iniPrefix, paths });
+async fcmProbePrerequisites(gamePath: string) : Promise<FcmPrerequisites> {
+    return await TAURI_INVOKE("fcm_probe_prerequisites", { gamePath });
+},
+async fcmPrerequisiteDownloadLinks(apiKey: string, modId: number, fileId: number) : Promise<NexusModsDownloadLink[]> {
+    return await TAURI_INVOKE("fcm_prerequisite_download_links", { apiKey, modId, fileId });
+},
+async fcmPreviewImport(gamePath: string, iniPath: string, iniPrefix: string, paths: string[], selectedProvider: string | null, providerPackage: string | null, loaderPackage: string | null) : Promise<FcmPreview> {
+    return await TAURI_INVOKE("fcm_preview_import", { gamePath, iniPath, iniPrefix, paths, selectedProvider, providerPackage, loaderPackage });
 },
 async fcmApply(token: string) : Promise<string> {
     return await TAURI_INVOKE("fcm_apply", { token });
@@ -512,6 +518,7 @@ totalBytes: string; percent: number }
 export type FcmAction = "installHud" | "installBridge" | "remove"
 export type FcmChange = { path: string; description: string }
 export type FcmPackageInfo = { version: string; source: string }
+export type FcmPrerequisites = { provider: string | null; hudModLoader: boolean }
 export type FcmPreview = { token: string; action: FcmAction; provider: string; installed: string | null; package: FcmPackageInfo | null; changes: FcmChange[] }
 export type FileCategory = "main" | "update" | "optional" | "old_version" | "miscellaneous"
 export type GameEdition = "Unknown" | "Steam" | "SteamPTS" | "Xbox" | 

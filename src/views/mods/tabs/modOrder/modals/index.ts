@@ -14,6 +14,7 @@ export const isCdnModalShownAtom = atom(false);
 // Mod installation modals
 export const isModInstallationDetailsModalShownAtom = atom(false);
 export const isModArchiveImportModalShownAtom = atom(false);
+export const isFcmPrerequisiteModalShownAtom = atom(false);
 
 // NexusMods modals
 export const isOutdatedModsModalShownAtom = atom(false);
@@ -35,6 +36,7 @@ export const isAnyModalShownAtom = atom(
     get(isModConflictingFilesModalShownAtom) ||
     get(isModInstallationDetailsModalShownAtom) ||
     get(isModArchiveImportModalShownAtom) ||
+    get(isFcmPrerequisiteModalShownAtom) ||
     get(isOutdatedModsModalShownAtom) ||
     get(isLoggedOutModalShownAtom) ||
     get(isArchive2InfoModalShownAtom) ||

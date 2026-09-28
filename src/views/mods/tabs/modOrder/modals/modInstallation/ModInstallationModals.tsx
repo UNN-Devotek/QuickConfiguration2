@@ -7,6 +7,7 @@ import { PhysicalPosition } from "@tauri-apps/api/window";
 import { useEffect } from "react";
 import ModArchiveImportModal from "./ModArchiveImportModal";
 import FcmImportModal from "./FcmImportModal";
+import FcmPrerequisiteModal from "./FcmPrerequisiteModal";
 import ModInstallationDetailsModal from "./ModInstallationDetailsModal";
 import { useModArchiveImportModal } from "./useModArchiveImportModal";
 
@@ -23,6 +24,7 @@ export default function ModInstallationModals() {
     installFromFolder,
     previewFcmRemoval,
     fcmModalProps,
+    fcmPrerequisiteProps,
     modalProps,
   } = useModInstallation();
   const { getArchives, modalProps: importModalProps } =
@@ -89,6 +91,7 @@ export default function ModInstallationModals() {
       <ModInstallationDetailsModal {...modalProps} />
       <ModArchiveImportModal {...importModalProps} />
       <FcmImportModal {...fcmModalProps} />
+      <FcmPrerequisiteModal {...fcmPrerequisiteProps} />
     </>
   );
 }

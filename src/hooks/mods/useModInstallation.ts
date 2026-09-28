@@ -2,6 +2,7 @@ import {
   commands,
   DirEntry,
   FcmPreview,
+  FcmPrerequisites,
   ManagedMod,
 } from "@/commands/bindings";
 import { AnyError, commandErrorToString } from "@/commands/errors";
@@ -16,7 +17,10 @@ import * as dialog from "@tauri-apps/plugin-dialog";
 import { atom, useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import { isModInstallationDetailsModalShownAtom } from "@/views/mods/tabs/modOrder/modals";
+import {
+  isFcmPrerequisiteModalShownAtom,
+  isModInstallationDetailsModalShownAtom,
+} from "@/views/mods/tabs/modOrder/modals";
 
 const fileContentsAtom = atom<DirEntry[]>([]);
 const modAtom = atom<ManagedMod>(createBaseManagedMod());
@@ -30,6 +34,13 @@ export function useModInstallation() {
   const [fileContents, setFileContents] = useAtom(fileContentsAtom);
   const [mod, setMod] = useAtom(modAtom);
   const [fcmPreview, setFcmPreview] = useState<FcmPreview | null>(null);
+  const [fcmPrerequisites, setFcmPrerequisites] = useState<{
+    paths: string[];
+    probe: FcmPrerequisites;
+  } | null>(null);
+  const [, setFcmPrerequisiteModalShown] = useAtom(
+    isFcmPrerequisiteModalShownAtom,
+  );
 
   const inspectFcmImport = async (paths: string[]) => {
     if (!(await commands.fcmDetectImport(paths))) return false;
@@ -37,11 +48,23 @@ export function useModInstallation() {
     if (!profile) throw new Error(t("errors.profileNotSet"));
     modsEventBus.emitProgressUpdated(t("fcmImport.inspecting"));
     await resourceListStoreSync.flushSave();
+    const probe = await commands.fcmProbePrerequisites(
+      profile.installationPath,
+    );
+    if (!probe.provider || !probe.hudModLoader) {
+      modsEventBus.emitProgressFinished();
+      setFcmPrerequisites({ paths, probe });
+      setFcmPrerequisiteModalShown(true);
+      return true;
+    }
     const preview = await commands.fcmPreviewImport(
       profile.installationPath,
       profile.iniPath,
       profile.iniPrefix,
       paths,
+      null,
+      null,
+      null,
     );
     modsEventBus.emitProgressFinished();
     setFcmPreview(preview);
@@ -312,6 +335,18 @@ export function useModInstallation() {
       preview: fcmPreview,
       onAbort: () => setFcmPreview(null),
       onApplied: () => setFcmPreview(null),
+    },
+    fcmPrerequisiteProps: {
+      request: fcmPrerequisites,
+      onAbort: () => {
+        setFcmPrerequisites(null);
+        setFcmPrerequisiteModalShown(false);
+      },
+      onPreview: (preview: FcmPreview) => {
+        setFcmPrerequisites(null);
+        setFcmPrerequisiteModalShown(false);
+        setFcmPreview(preview);
+      },
     },
     modalProps: {
       onInstall: installMod,

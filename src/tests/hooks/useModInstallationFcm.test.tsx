@@ -9,6 +9,7 @@ import { vi } from "vitest";
 vi.mock("@/commands/bindings", () => ({
   commands: {
     fcmDetectImport: vi.fn(),
+    fcmProbePrerequisites: vi.fn(),
     fcmPreviewImport: vi.fn(),
     fcmPreviewRemove: vi.fn(),
   },
@@ -61,6 +62,10 @@ beforeEach(() => {
     selected: "profile",
   });
   vi.mocked(commands.fcmDetectImport).mockResolvedValue(true);
+  vi.mocked(commands.fcmProbePrerequisites).mockResolvedValue({
+    provider: "zfe",
+    hudModLoader: true,
+  });
   vi.mocked(commands.fcmPreviewImport).mockResolvedValue({
     token: "preview-token",
     action: "installBridge",
@@ -90,6 +95,9 @@ it("routes an FCM ZIP through safe preview before ordinary mod staging", async (
     "/ini",
     "Fallout76",
     ["/downloads/overlay.zip"],
+    null,
+    null,
+    null,
   );
   expect(
     Mods.actions.tempFolder.createFromFileOrArchive,
@@ -97,6 +105,25 @@ it("routes an FCM ZIP through safe preview before ordinary mod staging", async (
   expect(hook.result.current.fcmModalProps.preview?.token).toBe(
     "preview-token",
   );
+});
+
+it("asks for a provider and HUDModLoader inside the normal import flow when missing", async () => {
+  vi.mocked(commands.fcmProbePrerequisites).mockResolvedValue({
+    provider: null,
+    hudModLoader: false,
+  });
+  const hook = renderHook(() => useModInstallation());
+  await act(async () => {
+    await hook.result.current.installFromFileWithPath("/downloads/hud.zip", {});
+  });
+  expect(hook.result.current.fcmPrerequisiteProps.request).toEqual({
+    paths: ["/downloads/hud.zip"],
+    probe: { provider: null, hudModLoader: false },
+  });
+  expect(commands.fcmPreviewImport).not.toHaveBeenCalled();
+  expect(
+    Mods.actions.tempFolder.createFromFileOrArchive,
+  ).not.toHaveBeenCalled();
 });
 
 it("previews removal through the dedicated command", async () => {

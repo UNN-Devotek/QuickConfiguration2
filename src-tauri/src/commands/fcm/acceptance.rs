@@ -80,6 +80,9 @@ fn import_preview(game: &Path, ini: &Path, zip: &Path, state: &FcmPlans) -> Resu
         &ini.display().to_string(),
         "Fallout76",
         &[path],
+        None,
+        None,
+        None,
         state,
     )?;
     println!("{}", serde_json::to_string_pretty(&preview)?);

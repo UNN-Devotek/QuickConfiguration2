@@ -8,14 +8,25 @@ normal import flow before installing. It never runs or installs the overlay
 executable or Linux installer from those ZIPs. The visible HUD and invisible
 Server Bridge cannot be active together.
 
-Install HUDModLoader and one native provider (ZFE or xScal) first. Select the
-Fallout 76 game and active INI directories in the Quick Configuration profile.
-Close Fallout 76, import the downloaded ZIP or folder, and review the exact file
-paths before applying. The imported package supplies its version: the HUD's
+Select the Fallout 76 game and active INI directories in the Quick Configuration
+profile. Close Fallout 76, then import the downloaded ZIP or folder. If exactly
+one native provider (ZFE or xScal) is already installed, Quick Configuration
+selects its matching HUD folder automatically. If neither is installed, choose
+the provider in the import dialog. If HUDModLoader's BA2 or INI is missing, the
+same dialog offers to download and install it. Quick Configuration gets the newest main ZIP
+listed by the official Nexus Mods API for each missing requirement. Nexus Mods
+Premium accounts can download directly; other accounts use the official Mod
+Manager Download button on the opened Nexus page. Sign in to Nexus Mods in
+Quick Configuration first. The fork registers itself as the `nxm://` handler if
+needed for that button. Existing unrecognized `dxgi.dll` files block the
+install so another proxy DLL is never overwritten. The provider, loader and FCM
+changes are reviewed and backed up together before applying.
+
+The imported package supplies its version: the HUD's
 production installation metadata or BA2 stamp, and the bridge's production
 `BUILD.json` and BA2 checksum. The installer validates the selected provider and
-required files. It does not fetch a release or silently replace the package you
-selected. An incomplete FCM package fails instead of entering the generic mod
+required files. It does not fetch a different FCM release or silently replace
+the package you selected. An incomplete FCM package fails instead of entering the generic mod
 deployment path. To remove the active FCM mod, use **Mods → More → Remove FCM
 mod**.
 

@@ -8,7 +8,10 @@ use regex::bytes::Regex;
 use semver::Version;
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 
-use super::{FcmAction, FcmPackageInfo, FcmPlans, FcmPreview, make_plan, package_files, provider};
+use super::{
+    FcmAction, FcmPackageInfo, FcmPlans, FcmPreview, make_plan_with_prerequisites, package_files,
+    probe_prerequisites,
+};
 
 const MAX_NESTED_ZIP_BYTES: u64 = 32 * 1024 * 1024;
 
@@ -492,10 +495,78 @@ pub(super) fn preview_import(
     ini_path: &str,
     ini_prefix: &str,
     paths: &[String],
+    requested_provider: Option<&str>,
+    provider_package: Option<&str>,
+    loader_package: Option<&str>,
     state: &FcmPlans,
 ) -> Result<FcmPreview> {
     let game = PathBuf::from(game_path);
-    let selected_provider = provider(&game)?;
+    let probe = probe_prerequisites(&game)?;
+    let selected_provider = probe
+        .provider
+        .as_deref()
+        .or(requested_provider)
+        .context("Choose ZFE or xScal to install")?;
+    ensure!(
+        selected_provider == "zfe" || selected_provider == "xscal",
+        "Unsupported provider"
+    );
+    ensure!(
+        requested_provider.is_none_or(|requested| requested == selected_provider),
+        "Selected provider conflicts with the installed provider"
+    );
+    let mut prerequisites = Vec::new();
+    if probe.provider.is_none() {
+        let source = prerequisite_source(
+            provider_package.context("Choose a provider package to download")?,
+        )?;
+        let names = source.names()?;
+        let dll_name = unique_basename(&names, "dxgi.dll")?;
+        let dll = source.read(dll_name, 100 * 1024 * 1024)?;
+        let marker = if selected_provider == "zfe" {
+            b"zfe-chat-v1".as_slice()
+        } else {
+            b"xscalchatv1".as_slice()
+        };
+        let other = if selected_provider == "zfe" {
+            b"xscalchatv1".as_slice()
+        } else {
+            b"zfe-chat-v1".as_slice()
+        };
+        ensure!(
+            dll.windows(marker.len())
+                .any(|part| part.eq_ignore_ascii_case(marker))
+                && !dll
+                    .windows(other.len())
+                    .any(|part| part.eq_ignore_ascii_case(other)),
+            "Downloaded provider DLL does not match the selected provider"
+        );
+        prerequisites.push((PathBuf::from("dxgi.dll"), dll));
+        if selected_provider == "xscal" {
+            let ini_name = unique_basename(&names, "xscal.ini")?;
+            let ini = source.read(ini_name, 100_000)?;
+            String::from_utf8(ini.clone()).context("Invalid xScal INI")?;
+            if !game.join("xscal.ini").exists() {
+                prerequisites.push((PathBuf::from("xscal.ini"), ini));
+            }
+        }
+    }
+    let mut loader_default = None;
+    if !probe.hud_mod_loader {
+        let source = prerequisite_source(
+            loader_package.context("Choose a HUDModLoader package to download")?,
+        )?;
+        let names = source.names()?;
+        let ba2 = source.read(
+            unique_basename(&names, "HUDModLoader.ba2")?,
+            30 * 1024 * 1024,
+        )?;
+        ensure!(ba2.starts_with(b"BTDX"), "Invalid HUDModLoader BA2");
+        let ini =
+            String::from_utf8(source.read(unique_basename(&names, "hudmodloader.ini")?, 100_000)?)?;
+        loader_default = Some(ini);
+        prerequisites.push((PathBuf::from("Data/HUDModLoader.ba2"), ba2));
+    }
     let mut packages = Vec::new();
     for source in source_paths(paths)? {
         let label = source.label();
@@ -509,13 +580,16 @@ pub(super) fn preview_import(
         "Select exactly one complete FCM HUD or Server Bridge package"
     );
     let package = packages.pop().context("No FCM package was found")?;
-    let (plan, preview) = make_plan(
+    let (plan, preview) = make_plan_with_prerequisites(
         &game,
         Path::new(&ini_path),
         ini_prefix,
         package.action,
         Some(&package.info),
         package.files,
+        Some(selected_provider),
+        prerequisites,
+        loader_default,
     )?;
     state
         .0
@@ -523,6 +597,36 @@ pub(super) fn preview_import(
         .map_err(|_| anyhow::anyhow!("FCM plan lock is unavailable"))?
         .insert(preview.token.clone(), plan);
     Ok(preview)
+}
+
+fn prerequisite_source(path: &str) -> Result<ImportSource> {
+    let source = ImportSource::from_path(PathBuf::from(path))?
+        .context("Prerequisite package must be a ZIP or folder")?;
+    ensure!(
+        matches!(
+            source,
+            ImportSource::ZipFile(_) | ImportSource::Directory(_)
+        ),
+        "Invalid prerequisite package"
+    );
+    Ok(source)
+}
+
+fn unique_basename<'a>(names: &'a [String], expected: &str) -> Result<&'a str> {
+    let matches: Vec<&str> = names
+        .iter()
+        .filter(|name| {
+            name.rsplit('/')
+                .next()
+                .is_some_and(|base| base.eq_ignore_ascii_case(expected))
+        })
+        .map(String::as_str)
+        .collect();
+    ensure!(
+        matches.len() == 1,
+        "Package must contain exactly one {expected}"
+    );
+    Ok(matches[0])
 }
 
 #[cfg(test)]
@@ -649,6 +753,150 @@ mod tests {
         let source = ImportSource::ZipBytes(bytes);
         assert!(contains_marker(&source, false)?);
         assert!(inspect_source(&source, "zfe", false).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn full_hud_zip_installs_missing_xscal_and_loader_in_one_rollback_plan() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let game = temp.path().join("game");
+        let ini = temp.path().join("ini");
+        fs::create_dir_all(game.join("Data"))?;
+        fs::create_dir_all(&ini)?;
+        fs::write(game.join("Fallout76.exe"), b"")?;
+        fs::write(
+            ini.join("Fallout76Custom.ini"),
+            b"[Archive]\nsResourceArchive2List=Other.ba2\n[Other]\nkeep=yes\n",
+        )?;
+        let hud = package_zip(vec![
+            ("ZFE (Install for ZFE only)/INSTALL.txt".to_owned(), b"Fallout Chat Mod HUD 2.10.125 - ZFE (PRODUCTION)".to_vec()),
+            ("ZFE (Install for ZFE only)/Data (drag the contents into data folder)/FCMChatWidget.ba2".to_owned(), b"BTDX zfe 2.10.125".to_vec()),
+            ("ZFE (Install for ZFE only)/Data (drag the contents into data folder)/FCMChat.ini".to_owned(), b"[FCMChat]\nopenKey=INSERT\n".to_vec()),
+            ("ZFE (Install for ZFE only)/Data (drag the contents into data folder)/ZFE/TextChat/fragments/FCMChatWidget.ini".to_owned(), b"[TextChat]\nenabled=true\n".to_vec()),
+            ("xScal (Install for xScal only)/INSTALL.txt".to_owned(), b"Fallout Chat Mod HUD 2.10.125 - xScal (PRODUCTION)".to_vec()),
+            ("xScal (Install for xScal only)/Data (drag the contents into data folder)/FCMChatWidget.ba2".to_owned(), b"BTDX xscal 2.10.125".to_vec()),
+            ("xScal (Install for xScal only)/Data (drag the contents into data folder)/FCMChat.ini".to_owned(), b"[FCMChat]\nopenKey=INSERT\n".to_vec()),
+            ("xScal (Install for xScal only)/xscal.ini".to_owned(), b"[Chat]\nenabled=true\nrelayEndpoint=wss://falloutchatmod.com/relay\n".to_vec()),
+        ])?;
+        let provider = package_zip(vec![
+            ("dxgi.dll".to_owned(), b"MZ XSCALCHATV1".to_vec()),
+            (
+                "xscal.ini".to_owned(),
+                b"[Chat]\nenabled=false\n[Other]\nkeep=yes\n".to_vec(),
+            ),
+        ])?;
+        let loader = package_zip(vec![
+            ("Data/HUDModLoader.ba2".to_owned(), b"BTDX loader".to_vec()),
+            (
+                "Data/hudmodloader.ini".to_owned(),
+                b"OtherChild\nFCMChatWidget\nFCMChatWidget.swf\n".to_vec(),
+            ),
+        ])?;
+        let hud_path = temp.path().join("hud.zip");
+        let provider_path = temp.path().join("provider.zip");
+        let loader_path = temp.path().join("loader.zip");
+        fs::write(&hud_path, hud)?;
+        fs::write(&provider_path, provider)?;
+        fs::write(&loader_path, loader)?;
+        let state = FcmPlans::default();
+        let preview = preview_import(
+            game.to_str().unwrap(),
+            ini.to_str().unwrap(),
+            "Fallout76",
+            &[hud_path.to_string_lossy().into_owned()],
+            Some("xscal"),
+            Some(provider_path.to_str().unwrap()),
+            Some(loader_path.to_str().unwrap()),
+            &state,
+        )?;
+        assert_eq!(preview.provider, "xscal");
+        assert!(
+            preview
+                .changes
+                .iter()
+                .any(|change| change.path.ends_with("dxgi.dll"))
+        );
+        let plan = state.0.lock().unwrap().remove(&preview.token).unwrap();
+        super::super::apply_plan(plan, temp.path())?;
+        assert_eq!(super::super::provider(&game)?, "xscal");
+        assert_eq!(
+            fs::read_to_string(game.join("Data/hudmodloader.ini"))?,
+            "OtherChild\nFCMChatWidget\n"
+        );
+        assert!(fs::read_to_string(game.join("xscal.ini"))?.contains("keep=yes"));
+        assert!(
+            fs::read_to_string(ini.join("Fallout76Custom.ini"))?
+                .contains("Other.ba2,HUDModLoader.ba2,FCMChatWidget.ba2")
+        );
+        assert!(fs::read_to_string(ini.join("Fallout76Custom.ini"))?.contains("keep=yes"));
+        let repeat = preview_import(
+            game.to_str().unwrap(),
+            ini.to_str().unwrap(),
+            "Fallout76",
+            &[hud_path.to_string_lossy().into_owned()],
+            None,
+            None,
+            None,
+            &state,
+        )?;
+        assert!(repeat.changes.is_empty());
+        fs::remove_file(game.join("dxgi.dll"))?;
+        let reinstall = preview_import(
+            game.to_str().unwrap(),
+            ini.to_str().unwrap(),
+            "Fallout76",
+            &[hud_path.to_string_lossy().into_owned()],
+            Some("xscal"),
+            Some(provider_path.to_str().unwrap()),
+            None,
+            &state,
+        )?;
+        assert!(
+            reinstall
+                .changes
+                .iter()
+                .any(|change| change.path.ends_with("dxgi.dll"))
+        );
+        assert!(
+            reinstall
+                .changes
+                .iter()
+                .all(|change| !change.path.ends_with("xscal.ini"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prerequisite_import_rejects_unrecognized_proxy_and_wrong_provider() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let game = temp.path().join("game");
+        let ini = temp.path().join("ini");
+        fs::create_dir_all(game.join("Data"))?;
+        fs::create_dir_all(&ini)?;
+        fs::write(game.join("Fallout76.exe"), b"")?;
+        fs::write(game.join("dxgi.dll"), b"another proxy")?;
+        assert!(probe_prerequisites(&game).is_err());
+        fs::remove_file(game.join("dxgi.dll"))?;
+        fs::write(game.join("Data/HUDModLoader.ba2"), b"BTDX")?;
+        fs::write(ini.join("Fallout76Custom.ini"), b"[Archive]\n")?;
+        let provider_path = temp.path().join("zfe.zip");
+        fs::write(
+            &provider_path,
+            package_zip(vec![("dxgi.dll".to_owned(), b"MZ zfe-chat-v1".to_vec())])?,
+        )?;
+        let bridge_path = temp.path().join("bridge.zip");
+        fs::write(&bridge_path, package_zip(bridge_entries(""))?)?;
+        let result = preview_import(
+            game.to_str().unwrap(),
+            ini.to_str().unwrap(),
+            "Fallout76",
+            &[bridge_path.to_string_lossy().into_owned()],
+            Some("xscal"),
+            Some(provider_path.to_str().unwrap()),
+            None,
+            &FcmPlans::default(),
+        );
+        assert!(result.unwrap_err().to_string().contains("does not match"));
         Ok(())
     }
 
