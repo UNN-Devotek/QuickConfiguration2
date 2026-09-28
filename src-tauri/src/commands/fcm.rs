@@ -498,6 +498,30 @@ fn current_mode(loader: &str) -> Result<Option<String>> {
     })
 }
 
+fn current_install(game: &Path) -> Result<Option<String>> {
+    let loader = read_optional(&game.join("Data/hudmodloader.ini"))?
+        .map(String::from_utf8)
+        .transpose()?
+        .unwrap_or_default();
+    if let Some(mode) = current_mode(&loader)? {
+        return Ok(Some(mode));
+    }
+    let hud = game.join("Data/FCMChatWidget.ba2").is_file();
+    let bridge = game.join("Data/FCMServerBridge.ba2").is_file();
+    Ok(match (hud, bridge) {
+        (true, true) => Some("HUD and Server Bridge (conflict)".to_owned()),
+        (true, false) => Some("HUD".to_owned()),
+        (false, true) => Some("Server Bridge".to_owned()),
+        (false, false) => None,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn fcm_current_install(game_path: String) -> CommandResult<Option<String>> {
+    Ok(current_install(Path::new(&game_path))?)
+}
+
 fn make_plan(
     game: &Path,
     ini_dir: &Path,
@@ -814,6 +838,22 @@ pub fn fcm_apply(token: String, state: State<'_, FcmPlans>) -> CommandResult<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn current_install_finds_loader_entries_and_orphan_ba2() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let data = dir.path().join("Data");
+        fs::create_dir_all(&data)?;
+        assert_eq!(current_install(dir.path())?, None);
+        fs::write(data.join("FCMChatWidget.ba2"), b"BTDX")?;
+        assert_eq!(current_install(dir.path())?.as_deref(), Some("HUD"));
+        fs::write(data.join("hudmodloader.ini"), b"FCMServerBridge\n")?;
+        assert_eq!(
+            current_install(dir.path())?.as_deref(),
+            Some("Server Bridge")
+        );
+        Ok(())
+    }
 
     #[cfg(unix)]
     #[test]

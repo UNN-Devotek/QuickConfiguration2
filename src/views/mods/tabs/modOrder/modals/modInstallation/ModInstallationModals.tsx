@@ -22,7 +22,6 @@ export default function ModInstallationModals() {
     installFromFileWithPath,
     installFromPaths,
     installFromFolder,
-    previewFcmRemoval,
     fcmModalProps,
     fcmPrerequisiteProps,
     modalProps,
@@ -64,11 +63,6 @@ export default function ModInstallationModals() {
           case "mods-import-installed-archives":
             getArchives().catch((reason) => {
               console.error(reason);
-              modsEventBus.emitProgressAborted(reason as AnyError);
-            });
-            break;
-          case "fcm-remove":
-            previewFcmRemoval().catch((reason) => {
               modsEventBus.emitProgressAborted(reason as AnyError);
             });
             break;

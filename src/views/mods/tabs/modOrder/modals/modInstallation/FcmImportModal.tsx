@@ -1,5 +1,6 @@
 import { commands, type FcmPreview } from "@/commands/bindings";
 import { commandErrorToString, type AnyError } from "@/commands/errors";
+import { modsEventBus } from "@/services/mods";
 import { resourceListStoreSync } from "@/stores/resourceList";
 import { useProfilesStore } from "@/stores/profiles";
 import { useToastsStore } from "@/stores/toasts";
@@ -29,6 +30,7 @@ export default function FcmImportModal({ preview, onAbort, onApplied }: Props) {
       const backup = await commands.fcmApply(preview.token);
       await commands.iniLoad(profile.iniPath, profile.iniPrefix);
       await resourceListStoreSync.load();
+      modsEventBus.emitFcmChanged();
       useToastsStore
         .getState()
         .addToast(
@@ -50,24 +52,14 @@ export default function FcmImportModal({ preview, onAbort, onApplied }: Props) {
         <Modal.Title>{t("fcmImport.review")}</Modal.Title>
       </Modal.Header>
       <Modal.Body>
-        <p>
-          {t(
-            preview?.action === "remove"
-              ? "fcmImport.removeIntro"
-              : "fcmImport.importIntro",
-          )}
-        </p>
-        {preview?.action !== "remove" && (
-          <p className="small text-muted">{t("fcmImport.prerequisites")}</p>
-        )}
+        <p>{t("fcmImport.importIntro")}</p>
+        <p className="small text-muted">{t("fcmImport.prerequisites")}</p>
         {preview && (
           <>
             <p>
               {preview.action === "installHud"
                 ? t("fcmImport.hud")
-                : preview.action === "installBridge"
-                  ? t("fcmImport.bridge")
-                  : t("fcmImport.remove")}
+                : t("fcmImport.bridge")}
               {preview.package &&
                 ` — ${t("fcmImport.packageVersion", {
                   version: preview.package.version,

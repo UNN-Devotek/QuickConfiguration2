@@ -11,7 +11,6 @@ vi.mock("@/commands/bindings", () => ({
     fcmDetectImport: vi.fn(),
     fcmProbePrerequisites: vi.fn(),
     fcmPreviewImport: vi.fn(),
-    fcmPreviewRemove: vi.fn(),
   },
 }));
 
@@ -124,25 +123,4 @@ it("asks for a provider and HUDModLoader inside the normal import flow when miss
   expect(
     Mods.actions.tempFolder.createFromFileOrArchive,
   ).not.toHaveBeenCalled();
-});
-
-it("previews removal through the dedicated command", async () => {
-  vi.mocked(commands.fcmPreviewRemove).mockResolvedValue({
-    token: "remove-token",
-    action: "remove",
-    provider: "not required",
-    installed: "HUD",
-    package: null,
-    changes: [],
-  });
-  const hook = renderHook(() => useModInstallation());
-  await act(async () => {
-    await hook.result.current.previewFcmRemoval();
-  });
-  expect(commands.fcmPreviewRemove).toHaveBeenCalledWith(
-    "/game",
-    "/ini",
-    "Fallout76",
-  );
-  expect(hook.result.current.fcmModalProps.preview?.action).toBe("remove");
 });

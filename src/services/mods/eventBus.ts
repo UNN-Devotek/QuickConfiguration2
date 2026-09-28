@@ -19,7 +19,7 @@ export type UIActionEvent =
   | { type: "mods-global-enabled-changed"; enabled: boolean }
   | { type: "mods-delete-mod"; key: string }
   | { type: "mods-import-installed-archives" }
-  | { type: "fcm-remove" }
+  | { type: "fcm-changed" }
   | { type: "mods-show-conflicting-files" }
   | { type: "nexus-mods-check-for-updates" }
   | { type: "nexus-mods-download-mods-info" }
@@ -158,8 +158,8 @@ export class ModsEventBus {
     this.emitUIActionEvent({ type: "mods-import-installed-archives" });
   }
 
-  emitRemoveFcm() {
-    this.emitUIActionEvent({ type: "fcm-remove" });
+  emitFcmChanged() {
+    this.emitUIActionEvent({ type: "fcm-changed" });
   }
 
   /* Searches all mods for duplicate (= conflicting) files and shows an enumeration of these. */

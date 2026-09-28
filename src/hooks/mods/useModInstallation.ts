@@ -71,25 +71,6 @@ export function useModInstallation() {
     return true;
   };
 
-  const previewFcmRemoval = async () => {
-    const profile = useProfilesStore.getState().getSelectedProfile();
-    if (!profile) throw new Error(t("errors.profileNotSet"));
-    modsEventBus.emitProgressUpdated(t("fcmImport.inspecting"));
-    try {
-      await resourceListStoreSync.flushSave();
-      setFcmPreview(
-        await commands.fcmPreviewRemove(
-          profile.installationPath,
-          profile.iniPath,
-          profile.iniPrefix,
-        ),
-      );
-      modsEventBus.emitProgressFinished();
-    } catch (error) {
-      modsEventBus.emitProgressAborted(error as AnyError);
-    }
-  };
-
   const openInstallModal = (
     modDetails: ManagedMod,
     fileContents: DirEntry[],
@@ -329,7 +310,6 @@ export function useModInstallation() {
     installFromFileWithPath,
     installFromPaths,
     installFromFolder,
-    previewFcmRemoval,
     installMod,
     fcmModalProps: {
       preview: fcmPreview,

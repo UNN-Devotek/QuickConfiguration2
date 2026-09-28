@@ -1,4 +1,5 @@
 import {
+  commands,
   ManagedMod,
   ModInstallationState,
   NexusModsModInfo,
@@ -7,8 +8,9 @@ import Entry from "@/components/common/Entry";
 import { FlexCol, FlexRow } from "@/components/common/Flex";
 import useModinfos from "@/hooks/nexusmods/useModinfos";
 import { useDragAndDrop } from "@/hooks/useDragAndDrop";
-import { modsEventBus } from "@/services/mods";
+import { FCM_MOD_KEY, modsEventBus } from "@/services/mods";
 import { useModsStore } from "@/stores/mods";
+import { useProfilesStore } from "@/stores/profiles";
 import { useSettingsStore } from "@/stores/settings";
 import { css } from "@emotion/react";
 import {
@@ -19,7 +21,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import classNames from "classnames";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Form, InputGroup, Table } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
 import { getModInfo } from "./utils/getModInfo";
@@ -178,6 +180,32 @@ function ModTableRow(props: {
 
 export default function ModTable() {
   const { t } = useTranslation();
+  const gamePath = useProfilesStore((store) => store.getGamePath());
+  const [fcmInstall, setFcmInstall] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      if (!gamePath) {
+        setFcmInstall(null);
+        return;
+      }
+      commands
+        .fcmCurrentInstall(gamePath)
+        .then((installed) => {
+          if (active) setFcmInstall(installed);
+        })
+        .catch(console.error);
+    };
+    refresh();
+    const unsubscribe = modsEventBus.onUIActionEvent((event) => {
+      if (event.type === "fcm-changed") refresh();
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [gamePath]);
 
   const mods = useModsStore((store) => store.mods);
   const getModState = useModsStore((store) => store.getModState);
@@ -326,6 +354,40 @@ export default function ModTable() {
             />
           ))}
         </tbody>
+        {fcmInstall &&
+          `${t("fcmImport.modTitle")} ${fcmInstall}`
+            .toLocaleLowerCase()
+            .includes(filter.toLocaleLowerCase()) && (
+            <tbody>
+              <tr>
+                <td />
+                <td className="center">
+                  <Form.Check checked disabled readOnly />
+                </td>
+                <td className="expand">
+                  <b>{t("fcmImport.modTitle")}</b> — {fcmInstall}
+                </td>
+                <td className="center">—</td>
+                <td className="center">
+                  {t("mods.modOrderTab.table.rows.status.enabled")}
+                </td>
+                <td className="center">
+                  <code>Data</code>
+                </td>
+                <td className="center">-/-</td>
+                <td className="center">
+                  <Button
+                    variant="outline-danger"
+                    size="sm"
+                    onClick={() => modsEventBus.emitDeleteMod(FCM_MOD_KEY)}
+                  >
+                    <FontAwesomeIcon icon={faTrash} />
+                    &nbsp;{t("mods.modOrderTab.table.rows.deleteButton")}
+                  </Button>
+                </td>
+              </tr>
+            </tbody>
+          )}
       </Table>
     </FlexCol>
   );

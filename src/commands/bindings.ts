@@ -85,6 +85,9 @@ async launchGame(profile: Profile) : Promise<null> {
 async fcmPreviewRemove(gamePath: string, iniPath: string, iniPrefix: string) : Promise<FcmPreview> {
     return await TAURI_INVOKE("fcm_preview_remove", { gamePath, iniPath, iniPrefix });
 },
+async fcmCurrentInstall(gamePath: string) : Promise<string | null> {
+    return await TAURI_INVOKE("fcm_current_install", { gamePath });
+},
 async fcmDetectImport(paths: string[]) : Promise<boolean> {
     return await TAURI_INVOKE("fcm_detect_import", { paths });
 },

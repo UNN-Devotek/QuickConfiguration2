@@ -28,8 +28,9 @@ production installation metadata or BA2 stamp, and the bridge's production
 required files. It does not fetch a different FCM release or silently replace
 the package you selected. An incomplete FCM package fails instead of entering
 the generic mod deployment path. Unrelated nested HUD files stay in the normal
-mod import flow. To remove the active FCM mod, use **Mods → More → Remove FCM
-mod**.
+mod import flow. The installed HUD or Server Bridge appears in the normal Mods
+list. Use its **Delete** button and the standard confirmation to remove it.
+The confirmation previews the FCM files and INI entries that will change.
 
 The installer backs up every changed file under the app configuration directory's
 `fcm-backups/` folder and displays that backup path when complete. It merges
