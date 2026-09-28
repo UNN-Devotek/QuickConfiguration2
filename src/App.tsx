@@ -1,8 +1,6 @@
-import {
-  I18nBoundary,
-  ProfilesBoundary,
-  SettingsBoundary,
-} from "@/components/boundaries";
+import { I18nBoundary } from "@/components/boundaries/I18nBoundary";
+import { ProfilesBoundary } from "@/components/boundaries/ProfilesBoundary";
+import { SettingsBoundary } from "@/components/boundaries/SettingsBoundary";
 import MyThemeProvider from "@/components/MyThemeProvider";
 import Fallback from "@/views/errors/Fallback";
 import { ErrorBoundary } from "react-error-boundary";

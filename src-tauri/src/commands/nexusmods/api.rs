@@ -16,50 +16,6 @@ pub async fn nexusmods_api_validate(api_key: String) -> CommandResult<json::Acco
 
 #[tauri::command]
 #[specta::specta]
-pub async fn nexusmods_api_retrieve_modinfo(
-    api_key: String,
-    game_domain: String,
-    game_scoped_id: u32,
-) -> CommandResult<json::ModInfo> {
-    NexusModsAPI::new(api_key)
-        .retrieve_modinfo(api::ModID::IDs(game_domain, game_scoped_id))
-        .await
-        .tap_err(|err| log::error!("Failed to call API: {err}"))
-        .map_err(CommandError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn nexusmods_api_endorse(
-    api_key: String,
-    game_domain: String,
-    game_scoped_id: u32,
-    mod_version: String,
-) -> CommandResult<()> {
-    NexusModsAPI::new(api_key)
-        .endorse(api::ModID::IDs(game_domain, game_scoped_id), mod_version)
-        .await
-        .tap_err(|err| log::error!("Failed to call API: {err}"))
-        .map_err(CommandError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn nexusmods_api_abstain(
-    api_key: String,
-    game_domain: String,
-    game_scoped_id: u32,
-    mod_version: String,
-) -> CommandResult<()> {
-    NexusModsAPI::new(api_key)
-        .abstain(api::ModID::IDs(game_domain, game_scoped_id), mod_version)
-        .await
-        .tap_err(|err| log::error!("Failed to call API: {err}"))
-        .map_err(CommandError::from)
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn nexusmods_api_list_mod_files(
     api_key: String,
     game_domain: String,

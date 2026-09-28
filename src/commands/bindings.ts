@@ -10,20 +10,8 @@ export const commands = {
 async isDebug() : Promise<boolean> {
     return await TAURI_INVOKE("is_debug");
 },
-async isPrerelease() : Promise<boolean> {
-    return await TAURI_INVOKE("is_prerelease");
-},
-async openSpecialPath(specialPath: SpecialPath) : Promise<null> {
-    return await TAURI_INVOKE("open_special_path", { specialPath });
-},
-async openPathInFileExplorer(path: string) : Promise<null> {
-    return await TAURI_INVOKE("open_path_in_file_explorer", { path });
-},
 async openLogFile() : Promise<null> {
     return await TAURI_INVOKE("open_log_file");
-},
-async isFile(pathStr: string) : Promise<boolean> {
-    return await TAURI_INVOKE("is_file", { pathStr });
 },
 async isDirectory(pathStr: string) : Promise<boolean> {
     return await TAURI_INVOKE("is_directory", { pathStr });
@@ -34,20 +22,6 @@ async isDirectory(pathStr: string) : Promise<boolean> {
  */
 async getFileSize(pathStr: string) : Promise<string> {
     return await TAURI_INVOKE("get_file_size", { pathStr });
-},
-/**
- * "Strips" the `basePath` from the `path` and returns the relative path.
- * 
- * Example:
- * ```js
- * pathStripPrefix(
- * "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Fallout 76",
- * "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Fallout 76\\Data"
- * ) === "Data"
- * ```
- */
-async pathStripPrefix(basePath: string, path: string) : Promise<string> {
-    return await TAURI_INVOKE("path_strip_prefix", { basePath, path });
 },
 async detectIniPath(gamePath: string | null) : Promise<string | null> {
     return await TAURI_INVOKE("detect_ini_path", { gamePath });
@@ -61,12 +35,6 @@ async detectGamePath() : Promise<string[]> {
 async validateGamePath(pathStr: string) : Promise<boolean> {
     return await TAURI_INVOKE("validate_game_path", { pathStr });
 },
-async getConfigPath() : Promise<string> {
-    return await TAURI_INVOKE("get_config_path");
-},
-async getScreenshots(gamePath: string | null, iniPath: string | null) : Promise<Screenshot[]> {
-    return await TAURI_INVOKE("get_screenshots", { gamePath, iniPath });
-},
 async getSettings() : Promise<Settings> {
     return await TAURI_INVOKE("get_settings");
 },
@@ -78,9 +46,6 @@ async getProfiles() : Promise<Profiles> {
 },
 async saveProfiles(profiles: Profiles) : Promise<null> {
     return await TAURI_INVOKE("save_profiles", { profiles });
-},
-async launchGame(profile: Profile) : Promise<null> {
-    return await TAURI_INVOKE("launch_game", { profile });
 },
 async fcmPreviewRemove(gamePath: string, iniPath: string, iniPrefix: string) : Promise<FcmPreview> {
     return await TAURI_INVOKE("fcm_preview_remove", { gamePath, iniPath, iniPrefix });
@@ -100,62 +65,8 @@ async fcmPreviewImport(gamePath: string, iniPath: string, iniPrefix: string, pat
 async fcmApply(token: string) : Promise<string> {
     return await TAURI_INVOKE("fcm_apply", { token });
 },
-async iniLoad(iniPath: string, iniPrefix: string) : Promise<null> {
-    return await TAURI_INVOKE("ini_load", { iniPath, iniPrefix });
-},
-async iniSave(iniPath: string, iniPrefix: string) : Promise<null> {
-    return await TAURI_INVOKE("ini_save", { iniPath, iniPrefix });
-},
-/**
- * Creates ini files from included templates.
- */
-async iniCreateFiles(iniPath: string, iniPrefix: string) : Promise<null> {
-    return await TAURI_INVOKE("ini_create_files", { iniPath, iniPrefix });
-},
-async iniGetErrorContext(iniPath: string, fileName: string, line: number, msg: string) : Promise<IniErrorContext> {
-    return await TAURI_INVOKE("ini_get_error_context", { iniPath, fileName, line, msg });
-},
-async iniGetString(iniFile: IniFile, section: string | null, key: string) : Promise<string | null> {
-    return await TAURI_INVOKE("ini_get_string", { iniFile, section, key });
-},
-async iniSetString(iniFile: IniFile, section: string | null, key: string, value: string) : Promise<void> {
-    await TAURI_INVOKE("ini_set_string", { iniFile, section, key, value });
-},
-async iniGetInt(iniFile: IniFile, section: string | null, key: string) : Promise<number | null> {
-    return await TAURI_INVOKE("ini_get_int", { iniFile, section, key });
-},
-async iniSetInt(iniFile: IniFile, section: string | null, key: string, value: number) : Promise<void> {
-    await TAURI_INVOKE("ini_set_int", { iniFile, section, key, value });
-},
-async iniGetFloat(iniFile: IniFile, section: string | null, key: string) : Promise<number | null> {
-    return await TAURI_INVOKE("ini_get_float", { iniFile, section, key });
-},
-async iniSetFloat(iniFile: IniFile, section: string | null, key: string, value: number) : Promise<void> {
-    await TAURI_INVOKE("ini_set_float", { iniFile, section, key, value });
-},
-async iniGetBoolean(iniFile: IniFile, section: string | null, key: string) : Promise<boolean | null> {
-    return await TAURI_INVOKE("ini_get_boolean", { iniFile, section, key });
-},
-async iniSetBoolean(iniFile: IniFile, section: string | null, key: string, value: boolean) : Promise<void> {
-    await TAURI_INVOKE("ini_set_boolean", { iniFile, section, key, value });
-},
-async iniDeleteKey(iniFile: IniFile, section: string | null, key: string) : Promise<void> {
-    await TAURI_INVOKE("ini_delete_key", { iniFile, section, key });
-},
-async iniHasKey(iniFile: IniFile, section: string | null, key: string) : Promise<boolean> {
-    return await TAURI_INVOKE("ini_has_key", { iniFile, section, key });
-},
 async nexusmodsApiValidate(apiKey: string) : Promise<NexusModsAccountInfo> {
     return await TAURI_INVOKE("nexusmods_api_validate", { apiKey });
-},
-async nexusmodsApiRetrieveModinfo(apiKey: string, gameDomain: string, gameScopedId: number) : Promise<NexusModsModInfo> {
-    return await TAURI_INVOKE("nexusmods_api_retrieve_modinfo", { apiKey, gameDomain, gameScopedId });
-},
-async nexusmodsApiEndorse(apiKey: string, gameDomain: string, gameScopedId: number, modVersion: string) : Promise<null> {
-    return await TAURI_INVOKE("nexusmods_api_endorse", { apiKey, gameDomain, gameScopedId, modVersion });
-},
-async nexusmodsApiAbstain(apiKey: string, gameDomain: string, gameScopedId: number, modVersion: string) : Promise<null> {
-    return await TAURI_INVOKE("nexusmods_api_abstain", { apiKey, gameDomain, gameScopedId, modVersion });
 },
 async nexusmodsApiListModFiles(apiKey: string, gameDomain: string, gameScopedId: number, category: FileCategory) : Promise<NexusModsModFiles> {
     return await TAURI_INVOKE("nexusmods_api_list_mod_files", { apiKey, gameDomain, gameScopedId, category });
@@ -172,201 +83,11 @@ async nexusmodsSetAccountInfo(accountInfo: NexusModsAccountInfo) : Promise<null>
 async nexusmodsDeleteAccountInfo() : Promise<null> {
     return await TAURI_INVOKE("nexusmods_delete_account_info");
 },
-async nexusmodsGetModinfos() : Promise<NexusModsModInfos | null> {
-    return await TAURI_INVOKE("nexusmods_get_modinfos");
-},
-async nexusmodsSetModinfos(modinfos: NexusModsModInfos) : Promise<null> {
-    return await TAURI_INVOKE("nexusmods_set_modinfos", { modinfos });
-},
 async nexusmodsLoginViaSso() : Promise<null> {
     return await TAURI_INVOKE("nexusmods_login_via_sso");
 },
-async nexusmodsExtractIdsFromUrl(url: string) : Promise<[string, number]> {
-    return await TAURI_INVOKE("nexusmods_extract_ids_from_url", { url });
-},
 async nexusmodsExtractDetailsFromNxmUrl(nxmLink: string) : Promise<NXMLinkDetails> {
     return await TAURI_INVOKE("nexusmods_extract_details_from_nxm_url", { nxmLink });
-},
-async modsLoadMetadata(modsPath: string) : Promise<ManagedMods | null> {
-    return await TAURI_INVOKE("mods_load_metadata", { modsPath });
-},
-async modsLoadMetadataOrDefault(modsPath: string) : Promise<ManagedMods> {
-    return await TAURI_INVOKE("mods_load_metadata_or_default", { modsPath });
-},
-async modsSaveMetadata(modsPath: string, mods: ManagedMods) : Promise<null> {
-    return await TAURI_INVOKE("mods_save_metadata", { modsPath, mods });
-},
-/**
- * Copies files or folders to temporary folder. Returns folder contents.
- */
-async modsCreateTempFolderFromFilesOrFolders(modsPath: string, filePaths: string[]) : Promise<DirEntry[]> {
-    return await TAURI_INVOKE("mods_create_temp_folder_from_files_or_folders", { modsPath, filePaths });
-},
-/**
- * Copies file to temporary folder.
- * If the file is an archive, extracts it's contents to the temporary folder instead.
- * Returns folder contents.
- */
-async modsCreateTempFolderFromFileOrArchive(modsPath: string, filePath: string) : Promise<DirEntry[]> {
-    return await TAURI_INVOKE("mods_create_temp_folder_from_file_or_archive", { modsPath, filePath });
-},
-/**
- * Copies contents of folder to temporary folder. Returns folder contents.
- */
-async modsCreateTempFolderFromFolderContents(modsPath: string, folderPath: string) : Promise<DirEntry[]> {
-    return await TAURI_INVOKE("mods_create_temp_folder_from_folder_contents", { modsPath, folderPath });
-},
-/**
- * Deletes the temporary folder. If the folder doesn't exist, returns `Ok(())`.
- */
-async modsDeleteTempFolder(modsPath: string) : Promise<null> {
-    return await TAURI_INVOKE("mods_delete_temp_folder", { modsPath });
-},
-/**
- * Installs the mod with the given details and the selected contents of the temporary folder.
- * Deletes the temporary folder afterwards.
- * Fails if the `mod_details.folder_path` already exists.
- * Returns the new mod that should be appended to the mods store.
- */
-async modsInstallFromTempFolder(mods: ManagedMods, modsPath: string, modDetails: ManagedMod, selectedRelativePaths: string[]) : Promise<ModsStateUpdate> {
-    return await TAURI_INVOKE("mods_install_from_temp_folder", { mods, modsPath, modDetails, selectedRelativePaths });
-},
-/**
- * Installs the mod with the given details and the given archives from the Data folder.
- * Assumes that the archives are already in the resource list and tracks the mod as deployed.
- * This makes deploying the mod unnecessary and prevents ".ba2.old" files from being created when deploying.
- * Returns the updated state that should be written to the mods store.
- */
-async modsInstallFromExistingArchives(mods: ManagedMods, gamePath: string, modsPath: string, mod: ManagedMod, archiveNames: string[]) : Promise<ModsStateUpdate> {
-    return await TAURI_INVOKE("mods_install_from_existing_archives", { mods, gamePath, modsPath, mod, archiveNames });
-},
-async modsListTempFolderContents(modsPath: string) : Promise<DirEntry[]> {
-    return await TAURI_INVOKE("mods_list_temp_folder_contents", { modsPath });
-},
-async modsUninstallMod(mods: ManagedMods, modsPath: string, modKey: string) : Promise<ModsStateUpdate> {
-    return await TAURI_INVOKE("mods_uninstall_mod", { mods, modsPath, modKey });
-},
-/**
- * Deploy all mods from the given `mods_path` into the given `game_path`.
- * Returns the updated mod store.
- */
-async modsDeploy(mods: ManagedMods, modSettings: ModManagerSettings, modsPath: string, gamePath: string, list: ResourceList) : Promise<[ModsStateUpdate, ResourceList]> {
-    return await TAURI_INVOKE("mods_deploy", { mods, modSettings, modsPath, gamePath, list });
-},
-/**
- * Renames a mod's folder inside of `mods_path`.
- * Returns `Some` with the updated mod if the folder was renamed successfully,
- * `None` if no action was taken.
- */
-async modsRenameModFolder(mods: ManagedMods, modsPath: string, modKey: string, newFolderName: string) : Promise<ModsStateUpdate | null> {
-    return await TAURI_INVOKE("mods_rename_mod_folder", { mods, modsPath, modKey, newFolderName });
-},
-async modsUncheckUnneededEntries(contents: DirEntry[]) : Promise<string[]> {
-    return await TAURI_INVOKE("mods_uncheck_unneeded_entries", { contents });
-},
-async modsDetectRootFolder(modPath: string) : Promise<string> {
-    return await TAURI_INVOKE("mods_detect_root_folder", { modPath });
-},
-async modsDiagnoseIssues(modDetails: ManagedMod, modPath: string) : Promise<DiagnosticIssue[]> {
-    return await TAURI_INVOKE("mods_diagnose_issues", { modDetails, modPath });
-},
-/**
- * Returns the state of the mods metadata migration (whether v1.9.0 or later version have been migrated).
- */
-async modsDetectMigrationState(modsPath: string) : Promise<ModsMigrationState> {
-    return await TAURI_INVOKE("mods_detect_migration_state", { modsPath });
-},
-/**
- * Migrates v1 managed.xml to v2 mods.json.
- */
-async modsMigrateLegacyManagedMods(gamePath: string, modsPath: string) : Promise<null> {
-    return await TAURI_INVOKE("mods_migrate_legacy_managed_mods", { gamePath, modsPath });
-},
-/**
- * Delete mods from v1 managed.xml.
- */
-async modsRemoveLegacyManagedMods(gamePath: string, modsPath: string) : Promise<null> {
-    return await TAURI_INVOKE("mods_remove_legacy_managed_mods", { gamePath, modsPath });
-},
-async modsUtilsPackBa2Archives(modName: string, srcPath: string, dstPath: string, tmpPath: string) : Promise<null> {
-    return await TAURI_INVOKE("mods_utils_pack_ba2_archives", { modName, srcPath, dstPath, tmpPath });
-},
-async modsUtilsGetConflictingFiles(modsPath: string, mods: ManagedMod[]) : Promise<Conflict[]> {
-    return await TAURI_INVOKE("mods_utils_get_conflicting_files", { modsPath, mods });
-},
-/**
- * Returns all *.ba2 file names that are currently deployed by a mod.
- * If multiple mods deploy the same archive, only the last one (highest precedence) is kept.
- */
-async modsUtilsGetDeployedArchives(state: ModInstallationState[]) : Promise<DeployedArchive[]> {
-    return await TAURI_INVOKE("mods_utils_get_deployed_archives", { state });
-},
-async resourcelistLoadFromIni(iniFile: IniFile, section: string | null, key: string) : Promise<ResourceList> {
-    return await TAURI_INVOKE("resourcelist_load_from_ini", { iniFile, section, key });
-},
-async resourcelistSaveToIni(resourcelist: ResourceList, iniFile: IniFile, section: string | null, key: string) : Promise<null> {
-    return await TAURI_INVOKE("resourcelist_save_to_ini", { resourcelist, iniFile, section, key });
-},
-async resourcelistLoadFromTextFile(modsPath: string) : Promise<ResourceList> {
-    return await TAURI_INVOKE("resourcelist_load_from_text_file", { modsPath });
-},
-async resourcelistSaveToTextFile(resourcelist: ResourceList, modsPath: string) : Promise<null> {
-    return await TAURI_INVOKE("resourcelist_save_to_text_file", { resourcelist, modsPath });
-},
-/**
- * Switches the ini keys around in the ini (comma-separated).
- * If the new key already exists, it merges the lists together.
- * Returns the new resource list.
- */
-async resourcelistSwitchIniKeys(resourcelist: ResourceList, iniFile: IniFile, section: string | null, oldKey: string, newKey: string) : Promise<ResourceList> {
-    return await TAURI_INVOKE("resourcelist_switch_ini_keys", { resourcelist, iniFile, section, oldKey, newKey });
-},
-/**
- * Search `"${gamePath}/Data"` for archives that are not included in the resource list.
- * Excludes any archive starting with "SeventySix - " (as we don't want to add the game's archives).
- * Returns the list of archives.
- */
-async resourcelistGetUnlistedArchives(resourcelist: ResourceList, gamePath: string) : Promise<string[]> {
-    return await TAURI_INVOKE("resourcelist_get_unlisted_archives", { resourcelist, gamePath });
-},
-/**
- * Search `"${gamePath}/Data"` for archives that are not included in the resource list and appends them to it.
- * Excludes any archive starting with "SeventySix - " (as we don't want to add the game's archives).
- * Returns the modified resource list.
- */
-async resourcelistAddUnlistedArchives(resourcelist: ResourceList, gamePath: string) : Promise<ResourceList> {
-    return await TAURI_INVOKE("resourcelist_add_unlisted_archives", { resourcelist, gamePath });
-},
-/**
- * Checks if all archives in the resource list exist in `"${gamePath}/Data"`.
- * If not, they will be discarded (removed from the list).
- * Returns the modified resource list.
- */
-async resourcelistRemoveNonExistantArchives(resourcelist: ResourceList, gamePath: string) : Promise<ResourceList> {
-    return await TAURI_INVOKE("resourcelist_remove_non_existant_archives", { resourcelist, gamePath });
-},
-/**
- * Removes archives starting with "SeventySix -", as they belong to the game.
- * This could be used to cleanup the resource list when accidentally adding game archives.
- * Returns the modified resource list.
- */
-async resourcelistRemoveGameArchives(resourcelist: ResourceList) : Promise<ResourceList> {
-    return await TAURI_INVOKE("resourcelist_remove_game_archives", { resourcelist });
-},
-async archive2OpenProgram() : Promise<null> {
-    return await TAURI_INVOKE("archive2_open_program");
-},
-async archive2ExploreArchive(path: string) : Promise<null> {
-    return await TAURI_INVOKE("archive2_explore_archive", { path });
-},
-async archive2ExtractArchive(archivePath: string, outputFolderPath: string) : Promise<null> {
-    return await TAURI_INVOKE("archive2_extract_archive", { archivePath, outputFolderPath });
-},
-async archive2CreateArchive(archivePath: string, sourceFolderPath: string, format: Archive2Format, compression: Archive2Compression) : Promise<null> {
-    return await TAURI_INVOKE("archive2_create_archive", { archivePath, sourceFolderPath, format, compression });
-},
-async archive2ReadArchive(path: string) : Promise<Archive2Info> {
-    return await TAURI_INVOKE("archive2_read_archive", { path });
 },
 async nxmGetCurrent() : Promise<string | null> {
     return await TAURI_INVOKE("nxm_get_current");
@@ -374,14 +95,8 @@ async nxmGetCurrent() : Promise<string | null> {
 async nxmRegister() : Promise<null> {
     return await TAURI_INVOKE("nxm_register");
 },
-async nxmUnregister() : Promise<null> {
-    return await TAURI_INVOKE("nxm_unregister");
-},
 async nxmIsRegistered() : Promise<boolean> {
     return await TAURI_INVOKE("nxm_is_registered");
-},
-async getTranslations() : Promise<string[]> {
-    return await TAURI_INVOKE("get_translations");
 },
 async saveTranslation(fileName: string, translation: Translation) : Promise<null> {
     return await TAURI_INVOKE("save_translation", { fileName, translation });
@@ -389,20 +104,8 @@ async saveTranslation(fileName: string, translation: Translation) : Promise<null
 async loadTranslation(key: string) : Promise<Translation> {
     return await TAURI_INVOKE("load_translation", { key });
 },
-async loadAllTranslations() : Promise<SerializableCommandResult<Translation>[]> {
-    return await TAURI_INVOKE("load_all_translations");
-},
-async loadTranslationMetadata(key: string) : Promise<TranslationMeta> {
-    return await TAURI_INVOKE("load_translation_metadata", { key });
-},
 async loadAllTranslationMetadata() : Promise<SerializableCommandResult<TranslationMeta>[]> {
     return await TAURI_INVOKE("load_all_translation_metadata");
-},
-async checkForTranslationUpdates(lastUpdated: string | null) : Promise<boolean> {
-    return await TAURI_INVOKE("check_for_translation_updates", { lastUpdated });
-},
-async downloadTranslations() : Promise<string[]> {
-    return await TAURI_INVOKE("download_translations");
 },
 async downloadWithProgress(downloadUrl: string, downloadFolder: string) : Promise<string> {
     return await TAURI_INVOKE("download_with_progress", { downloadUrl, downloadFolder });
@@ -414,15 +117,11 @@ async downloadWithProgress(downloadUrl: string, downloadFolder: string) : Promis
 
 export const events = __makeEvents__<{
 downloadProgress: DownloadProgress,
-modsDeployProgressUpdate: ModsDeployProgressUpdate,
-modsMigrationProgress: ModsMigrationProgress,
 nxmNewLink: NXMNewLink,
 ssoAbort: NexusModsSSOAbort,
 ssoUpdate: NexusModsSSOUpdate
 }>({
 downloadProgress: "download-progress",
-modsDeployProgressUpdate: "mods-deploy-progress-update",
-modsMigrationProgress: "mods-migration-progress",
 nxmNewLink: "nxm-new-link",
 ssoAbort: "sso-abort",
 ssoUpdate: "sso-update"
@@ -434,78 +133,7 @@ ssoUpdate: "sso-update"
 
 /** user-defined types **/
 
-export type Archive2Compression = 
-/**
- * Uncompressed
- */
-"None" | 
-/**
- * Compressed
- */
-"Default" | "XBox"
-export type Archive2Format = "General" | 
-/**
- * Textures (DX10)
- */
-"DDS" | "XBoxDDS" | "GNF"
-export type Archive2Info = { compression: Archive2Compression; format: Archive2Format; numOfFiles: number }
-export type CommandError = { type: "String"; message: string } | { type: "Anyhow"; message: string } | { type: "UnsupportedPlatform"; message: string } | { type: "Io"; message: string } | { type: "PathError"; message: string; variant: string } | { type: "Utf8Error"; message: string } | { type: "SevenzipError"; message: string; variant: string } | { type: "Archive2Error"; message: string; variant: string } | { type: "Archive2ReadError"; message: string; variant: string } | { type: "MutexLock"; message: string } | { type: "TauriError"; message: string } | { type: "TokioError"; message: string } | { type: "RegexError"; message: string } | { type: "DowncastError"; message: string } | { type: "WindowsError"; message: string } | { type: "ReqwestError"; message: string } | { type: "DownloadError"; message: string; variant: string } | { type: "ModActionError"; message: string; variant: string } | { type: "IniParseError"; fileName: string | null; line: number; col: number; msg: string } | { type: "TranslationParseError"; key: string; filePath: string; fileName: string; line: number; column: number; message: string } | { type: "UrlParseError"; message: string }
-export type Conflict = { 
-/**
- * ID (UUID) of the mod that overwrites files of the other mod.
- */
-lower_mod_id: string; 
-/**
- * ID (UUID) of the mod that has files being overwritten by the other mod.
- */
-upper_mod_id: string; 
-/**
- * Relative paths of all files being overwritten.
- */
-files: string[] }
-export type DeployedArchive = { 
-/**
- * The UUID of the managed mod
- */
-modId: string; 
-/**
- * The file name of the deployed *.ba2 archive
- */
-archiveName: string }
-export type DiagnosticIssue = 
-/**
- * The mod folder is empty
- */
-"empty-folder" | 
-/**
- * The folder isn't empty but contains no files that are considered to be part of a mod.
- * e.g. it only contains text, config, image files, or excluded files.
- */
-"no-mod-files-found" | 
-/**
- * Archives (BA2 files) are not being deployed to `./Data/`
- */
-"wrong-folder-for-archives" | 
-/**
- * String files (STRINGS, DLSTRINGS, ILSTRINGS) are not being deployed to `./Data/Strings/`
- */
-"wrong-folder-for-strings" | 
-/**
- * DLL files are not being deployed to `.` (root)
- */
-"wrong-folder-for-dlls" | 
-/**
- * Multiple folders contain BA2 files. This usually indicates that the user has to choose from one or more options.
- * e.g. if it's a map texture replacer, the user may choose between different maps, etc.
- */
-"multiple-ba2-roots" | 
-/**
- * Found folders that usually belong in a BA2 archive, e.g. if the folder "meshes" folder was found.
- * This usually indicates that the files have to be packed into an archive, be loaded using a tool like BakaFileLoader, or be merged into an existing game's archive (e.g. `SeventySix - Animations.ba2`).
- * (This excludes the "strings" folder, which has to be put into the Data folder directly without being packed.)
- */
-"unpacked-files"
-export type DirEntry = { type: "file"; path: string; name: string } | { type: "folder"; path: string; name: string; contents: DirEntry[] }
+export type CommandError = { type: "String"; message: string } | { type: "Anyhow"; message: string } | { type: "UnsupportedPlatform"; message: string } | { type: "Io"; message: string } | { type: "PathError"; message: string; variant: string } | { type: "Utf8Error"; message: string } | { type: "MutexLock"; message: string } | { type: "TauriError"; message: string } | { type: "TokioError"; message: string } | { type: "RegexError"; message: string } | { type: "DowncastError"; message: string } | { type: "WindowsError"; message: string } | { type: "ReqwestError"; message: string } | { type: "DownloadError"; message: string; variant: string } | { type: "IniParseError"; fileName: string | null; line: number; col: number; msg: string } | { type: "TranslationParseError"; key: string; filePath: string; fileName: string; line: number; column: number; message: string } | { type: "UrlParseError"; message: string }
 export type DownloadProgress = { 
 /**
  * Number of downloaded bytes formatted as a string, because the numbers might get too large for Json/IPC.
@@ -534,85 +162,9 @@ export type GameEdition = "Unknown" | "Steam" | "SteamPTS" | "Xbox" |
  * Legacy, for back-compat
  */
 "BethesdaNetPTS"
-export type IniErrorContext = { fileName: string; lines: IniErrorContextLine[] }
-export type IniErrorContextLine = { num: number; code: string; error: string | null }
-export type IniFile = "Main" | "Prefs" | "Custom"
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key in string]: JsonValue }
 export type LaunchOption = "OpenURL" | "RunExec"
-/**
- * Represents a managed mod. Stores information about the mod and how it should be installed.
- */
-export type ManagedMod = { 
-/**
- * A uuidv4 key identifying a mod
- */
-key: string; title: string; 
-/**
- * The folder name of the mod inside of the mods path.
- */
-folderName: string; 
-/**
- * The installed version
- */
-version: string; 
-/**
- * The source URL, e.g. from NexusMods
- */
-url: string; 
-/**
- * The user's notes about the mod.
- */
-notes: string; 
-/**
- * Enabled for deployment: Whether we want to have this mod deployed or not.
- */
-enabled: boolean; 
-/**
- * Deployment options: How we want the mod to be deployed.
- */
-options: ModInstallationOptions }
-/**
- * State of managed mods for the game.
- */
-export type ManagedMods = { 
-/**
- * Toggle to enable/disable mods globally.
- */
-enabled: boolean; 
-/**
- * Installed mods and how it should be deployed to disk (if enabled).
- */
-mods: ManagedMod[]; 
-/**
- * Current disk state: How mods are currently deployed to disk.
- */
-state: ModInstallationState[]; migratedFromV1?: ModsMigration | null }
 export type ModCopyMethod = "copy" | "symlink" | "hardlink"
-export type ModInstallationOptions = { 
-/**
- * The folder where to copy files to on deployment.
- */
-rootFolder: string }
-/**
- * Represents a mod that was deployed to the game folder. Stores information about how the mod was installed.
- */
-export type ModInstallationState = { 
-/**
- * A uuidv4 key identifying a mod
- */
-key: string; 
-/**
- * The folder where files have previously been copied to.
- */
-rootFolder: string; 
-/**
- * Relative paths of the mod files that have previously been copied.
- */
-files: string[]; 
-/**
- * Flags the mod state as outdated which always makes deployment necessary
- */
-outdated?: boolean }
 /**
  * Settings that only apply to the mod manager portion of the tool.
  */
@@ -641,53 +193,14 @@ downloadPath: string;
  * Display NexusMods titles instead of mod names if available. User-preference.
  */
 showNexusModsTitle: boolean }
-export type ModsDeployProgressUpdate = { status: "preparing" } | { status: "preparing-removal" } | { status: "removing-mod"; modTitle: string; removedMods: number; totalMods: number; fileName: string; removedFiles: number; totalFiles: number } | { status: "finalizing-removal" } | { status: "finished-removal"; removedMods: number; removedResources: number } | { status: "preparing-deployment" } | { status: "preparing-deployment-of-mod"; modTitle: string; deployedMods: number; totalMods: number } | { status: "deploying-mod"; modTitle: string; deployedMods: number; totalMods: number; fileName: string; copiedFiles: number; totalFiles: number } | { status: "finished-deployment" } | { status: "finished" }
-export type ModsMigration = { date: string }
-export type ModsMigrationProgress = { status: "removing-bundled-archives" } | { status: "removing-mod"; modTitle: string; currentMod: number; totalMods: number } | { status: "migrating-mod"; modTitle: string; currentMod: number; totalMods: number } | { status: "cleanup" }
-export type ModsMigrationState = 
-/**
- * manifest.xml (from before v1.9.0) without managed.xml found, no migrations yet
- */
-"pre-v1.9-found" | 
-/**
- * managed.xml (from v1.9.0 or later) found, no migrations yet
- */
-"v1.9-or-later-found" | 
-/**
- * managed.xml (from v1.9.0 or later) found, already migrated
- */
-"v1.9-migrated" | 
-/**
- * No legacy metadata found, migration not necessary
- */
-"none"
-/**
- * Partial mods store update returned by some commands.
- */
-export type ModsStateUpdate = { type: "updated-all"; message: ManagedMods } | { type: "updated-enabled"; message: boolean } | { type: "updated-mods"; message: ManagedMod[] } | { type: "updated-state"; message: ModInstallationState[] } | { type: "updated-mod"; message: ManagedMod } | { type: "appended-mod"; message: ManagedMod } | { type: "deleted-mod"; message: string }
 export type NXMLinkDetails = { gameDomain: string; gameScopedId: number; fileId: number; key: string; expires: number; userId: number }
 export type NXMNewLink = string
 export type NexusModsAccountInfo = { profile: NexusModsProfile; rateLimit: NexusModsRateLimit }
 export type NexusModsDownloadLink = { name: string; shortName: string; uri: string }
-export type NexusModsEndorseStatus = "Endorsed" | "Abstained" | "Undecided"
 export type NexusModsFileUpdate = { oldFileId: number; newFileId: number; oldFileName: string; newFileName: string; uploadedTime: string }
 export type NexusModsMembership = "Basic" | "Supporter" | "Premium"
 export type NexusModsModFile = { id: number[]; uid: number; fileId: number; name: string; version: string; categoryId: number; categoryName: string; isPrimary: boolean; size: number; fileName: string; uploadedTime: string; modVersion: string; externalVirusScanUrl: string | null; description: string; sizeKb: number; sizeInBytes: string; changelogHtml: string | null; contentPreviewLink: string | null }
 export type NexusModsModFiles = { fileUpdates: NexusModsFileUpdate[]; files: NexusModsModFile[] }
-export type NexusModsModInfo = { 
-/**
- * The mod's ID, e.g. 546
- */
-gameScopedId: number; 
-/**
- * The game for which the mod was uploaded, e.g. "fallout76"
- */
-gameDomain: string; name: string; summary: string; version: string; author: string; uploadedBy: string; pictureUrl: string; 
-/**
- * A thumbnail downloaded from `picture_url`
- */
-thumbnailFilename: string | null; endorsementCount: number; endorseStatus: NexusModsEndorseStatus; containsAdultContent: boolean; createdTime: string; updatedTime: string; lastAccessTime: string }
-export type NexusModsModInfos = { mods: NexusModsModInfo[] }
 export type NexusModsProfile = { userId: number; apiKey: string; name: string; email: string; profileUrl: string; membership: NexusModsMembership }
 export type NexusModsRateLimit = { dailyLimit: number; dailyRemaining: number; dailyReset: string; hourlyLimit: number; hourlyRemaining: number; hourlyReset: string }
 export type NexusModsSSOAbort = null
@@ -695,12 +208,9 @@ export type NexusModsSSOUpdate = { apiKey: string } | { error: string } | "cance
 export type Profile = { key: string; title: string; installationPath: string; modsPath: string; executableName: string; execParameters: string; launcherURL: string; iniPrefix: string; iniPath: string; gameEdition: GameEdition; launchOption: LaunchOption }
 export type Profiles = { selected: string; profiles: Profile[] }
 export type ResourceInsertionPosition = "prepend" | "append"
-export type ResourceList = string[]
-export type Screenshot = { path: string; thumbnailPath: string }
 export type SerializableCommandResult<T> = { status: "ok"; value: T } | { status: "error"; value: CommandError }
 export type Settings = { version: string; theme: Theme; useGameCursor: boolean; language: string | null; translationsLastUpdated: string | null; fetchServerStatusOnStart: boolean; checkForUpdatesOnStart: boolean; downloadTranslationsOnStart: boolean; quitOnGameLaunch: boolean; navigationCollapsed: boolean; modManager: ModManagerSettings; migratedFromV1?: SettingsMigration | null; prereleaseDismissed?: boolean | null }
 export type SettingsMigration = { fromVersion: string; toVersion: string; date: string; dismissed: boolean }
-export type SpecialPath = "AppInstallFolder" | "AppConfigFolder" | "AppTranslationsFolder" | "SteamScreenshotFolder"
 export type Theme = "light" | "dark" | "system"
 /**
  * Meta data and translation keys.

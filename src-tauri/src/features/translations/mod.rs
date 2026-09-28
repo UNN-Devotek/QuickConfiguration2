@@ -1,8 +1,6 @@
-mod download;
 mod errors;
 mod models;
 
-pub use download::*;
 pub use errors::*;
 pub use models::*;
 

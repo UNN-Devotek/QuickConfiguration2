@@ -236,7 +236,6 @@ function forwardConsole(
   const original = console[fnName];
   console[fnName] = (...args) => {
     original(...args);
-    // TODO: Handle formatting strings with `%s`, `%o`. React seems to love these...
     const formattedMessage = args
       .map((message) =>
         typeof message == "string"

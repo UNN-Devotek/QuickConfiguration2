@@ -1,57 +1,15 @@
-## Building
+# Build the focused FCM fork
 
-### Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
-
-### Prerequisites
-
-See [tauri.app -> Guides -> Quick Start -> Prerequisites](https://tauri.app/start/prerequisites/)
-
-### Build and run
+Install Node.js, pnpm, Rust, and the Tauri 2 platform prerequisites. On Linux, WebKitGTK 4.1 and the packages listed in [Tauri's Linux prerequisites](https://v2.tauri.app/start/prerequisites/) are required.
 
 ```bash
-# Download node_modules:
-pnpm install
-# Run debug:
-pnpm dev
-# Build release:
+pnpm install --frozen-lockfile
+pnpm ui:lint
+pnpm ui:vitest
+cargo test --manifest-path src-tauri/Cargo.toml
 pnpm build
 ```
 
-Currently, building the AppImage on Linux fails due to an upstream issue ([tauri#8929](https://github.com/tauri-apps/tauri/issues/8929), [linuxdeploy#272](https://github.com/linuxdeploy/linuxdeploy/issues/272)). Set the `NO_STRIP` environment variable:
+To build only the AppImage, run `pnpm tauri build --bundles appimage`. If `linuxdeploy` cannot strip a system library, set `NO_STRIP=1`. The AppImage launcher script at `scripts/launch-appimage-linux.sh` handles the known NVIDIA WebKit renderer workaround and clears inherited AppImage environment variables.
 
-```bash
-# Build release (workaround on Linux):
-NO_STRIP=true pnpm build
-```
-
-To sign a release and create a signature (`*.sig` file), run the `setup-build-env.sh` script before building:
-
-```bash
-# Export environment variables:
-./scripts/setup-build-env.sh
-# Build signed release with signature:
-pnpm build
-```
-
-### Testing
-
-To get test coverage (and nicer output) from the Rust side, `cargo-llvm-cov` and `cargo-nextest` is used, which is installed easily with [`binstall`](https://github.com/cargo-bins/cargo-binstall?tab=readme-ov-file#installation):
-
-```bash
-cargo binstall cargo-llvm-cov cargo-nextest
-```
-
-Then run:
-
-```bash
-# Test everything (with coverage):
-pnpm test
-# Test Core process only:
-pnpm run cargo:nextest
-# Test WebView process (React UI) only:
-pnpm run ui:vitest
-```
-
-Coverage is generated under `./coverage/{llvm-cov,vitest}/index.html`.
+The generated Tauri command bindings are in `src/commands/bindings.ts`. After changing the Rust command list, regenerate them with `cargo run --manifest-path src-tauri/Cargo.toml -- --export-bindings` and commit the result. The opt-in production package acceptance commands are documented in [FCM-INSTALL.md](FCM-INSTALL.md).

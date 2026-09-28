@@ -1,7 +1,7 @@
 [package]
 name = "f76qc2"
-version = "2.0.0-beta.5"
-description = "Fallout 76 Quick Configuration"
+version = "2.0.0-beta.6"
+description = "Fallout Chat Mod installer fork of Quick Configuration 2"
 authors = ["FelisDiligens"]
 license = "MIT"
 repository = ""
@@ -17,12 +17,10 @@ serde_json = "1.0"
 # Tauri
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-http = "2"
 tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-single-instance = "2"
-tauri-plugin-process = "2"
 
 # Tauri Specta (beta)
 specta = { version = "=2.0.0-rc.20", features = ["serde_json"] }

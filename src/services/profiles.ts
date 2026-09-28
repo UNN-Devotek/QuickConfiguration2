@@ -1,5 +1,6 @@
 import { commands, GameEdition, Profile } from "@/commands/bindings";
 import { useProfilesStore } from "@/stores/profiles";
+import { pathJoinSync } from "@/utils";
 
 async function detectGameEditionInternal(
   gamePath?: string,
@@ -24,8 +25,9 @@ async function detectGameEditionInternal(
  * @returns Steam, SteamPTS, or Xbox
  */
 export async function detectGameEdition(): Promise<GameEdition> {
-  const gamePath = useProfilesStore.getState().getGamePath();
-  const iniPath = useProfilesStore.getState().getIniPath();
+  const profile = useProfilesStore.getState().getSelectedProfile();
+  const gamePath = profile?.installationPath;
+  const iniPath = profile?.iniPath;
   return await detectGameEditionInternal(gamePath, iniPath);
 }
 
@@ -128,6 +130,6 @@ export function getProfileDefaultsForGamePath(
 ): Pick<Profile, "installationPath" | "modsPath"> {
   return {
     installationPath: gamePath || "",
-    modsPath: useProfilesStore.getState().getDefaultModsPath(gamePath) || "",
+    modsPath: gamePath ? pathJoinSync(gamePath, "Mods") : "",
   };
 }

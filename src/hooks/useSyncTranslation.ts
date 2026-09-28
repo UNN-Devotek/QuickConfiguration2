@@ -32,8 +32,6 @@ export default function useSyncTranslation() {
 
   useEffect(() => {
     if (language === null) {
-      // TODO: Get i18next-browser-languagedetector to work.
-      // Until then, use `detectLanguage` to crudely use `navigator.languages` and get the next best result:
       setLanguage(detectLanguage());
     } else if (isI18nextInitialized) {
       i18n.changeLanguage(language).catch(console.error);
