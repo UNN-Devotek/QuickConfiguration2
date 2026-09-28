@@ -731,6 +731,10 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     fs::create_dir_all(path.parent().context("File has no parent")?)?;
     let mut temp = tempfile::NamedTempFile::new_in(path.parent().context("File has no parent")?)?;
     temp.write_all(bytes)?;
+    if path.exists() {
+        temp.as_file()
+            .set_permissions(fs::metadata(path)?.permissions())?;
+    }
     temp.persist(path)?;
     Ok(())
 }
@@ -810,6 +814,21 @@ pub fn fcm_apply(token: String, state: State<'_, FcmPlans>) -> CommandResult<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn replacing_an_fcm_file_preserves_its_permissions() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("hudmodloader.ini");
+        fs::write(&path, "before")?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644))?;
+        atomic_write(&path, b"after")?;
+        assert_eq!(fs::read_to_string(&path)?, "after");
+        assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o644);
+        Ok(())
+    }
 
     #[test]
     fn archive_merge_preserves_unrelated_entries() -> Result<()> {

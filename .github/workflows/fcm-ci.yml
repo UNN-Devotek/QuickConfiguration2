@@ -2,7 +2,7 @@ name: FCM package import checks
 
 on:
   push:
-    branches: [main, feat/fcm-guided-installer]
+    branches: [main]
   pull_request:
 
 jobs:

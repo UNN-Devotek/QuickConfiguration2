@@ -444,9 +444,15 @@ fn contains_marker(source: &ImportSource, nested: bool) -> Result<bool> {
         {
             let lower = name.to_ascii_lowercase();
             if lower.contains("fcm") || lower.contains("bridge") || lower.contains("hud") {
-                let bytes = source.read(name, MAX_NESTED_ZIP_BYTES)?;
-                if contains_marker(&ImportSource::ZipBytes(bytes), true)? {
-                    return Ok(true);
+                let nested = source
+                    .read(name, MAX_NESTED_ZIP_BYTES)
+                    .and_then(|bytes| contains_marker(&ImportSource::ZipBytes(bytes), true));
+                match nested {
+                    Ok(true) => return Ok(true),
+                    Err(error) if lower.contains("fcm") || lower.contains("bridge") => {
+                        return Err(error);
+                    }
+                    Ok(false) | Err(_) => {}
                 }
             }
         }
@@ -600,16 +606,8 @@ pub(super) fn preview_import(
 }
 
 fn prerequisite_source(path: &str) -> Result<ImportSource> {
-    let source = ImportSource::from_path(PathBuf::from(path))?
-        .context("Prerequisite package must be a ZIP or folder")?;
-    ensure!(
-        matches!(
-            source,
-            ImportSource::ZipFile(_) | ImportSource::Directory(_)
-        ),
-        "Invalid prerequisite package"
-    );
-    Ok(source)
+    ImportSource::from_path(PathBuf::from(path))?
+        .context("Prerequisite package must be a ZIP or folder")
 }
 
 fn unique_basename<'a>(names: &'a [String], expected: &str) -> Result<&'a str> {
@@ -675,6 +673,21 @@ mod tests {
         let packages = inspect_source(&ImportSource::ZipBytes(outer), "xscal", false)?;
         assert_eq!(packages.len(), 1);
         assert_eq!(packages[0].action, FcmAction::InstallBridge);
+        Ok(())
+    }
+
+    #[test]
+    fn unrelated_nested_hud_file_stays_in_the_normal_mod_flow() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("other-mod.zip");
+        fs::write(
+            &path,
+            package_zip(vec![
+                ("assets/hud-art.zip".to_owned(), b"not a ZIP".to_vec()),
+                ("Data/OtherMod.ba2".to_owned(), b"BTDX".to_vec()),
+            ])?,
+        )?;
+        assert!(!detect_import(&[path.display().to_string()])?);
         Ok(())
     }
 

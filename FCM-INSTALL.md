@@ -26,14 +26,16 @@ The imported package supplies its version: the HUD's
 production installation metadata or BA2 stamp, and the bridge's production
 `BUILD.json` and BA2 checksum. The installer validates the selected provider and
 required files. It does not fetch a different FCM release or silently replace
-the package you selected. An incomplete FCM package fails instead of entering the generic mod
-deployment path. To remove the active FCM mod, use **Mods → More → Remove FCM
+the package you selected. An incomplete FCM package fails instead of entering
+the generic mod deployment path. Unrelated nested HUD files stay in the normal
+mod import flow. To remove the active FCM mod, use **Mods → More → Remove FCM
 mod**.
 
 The installer backs up every changed file under the app configuration directory's
 `fcm-backups/` folder and displays that backup path when complete. It merges
 `Data/hudmodloader.ini` and the active `Fallout76Custom.ini` archive list without
-replacing unrelated entries. A visible HUD install creates `Data/FCMChat.ini` or
+replacing unrelated entries and preserves permissions on updated files. A
+visible HUD install creates `Data/FCMChat.ini` or
 the ZFE fragment only if absent, preserving edited copies. On xScal it merges
 only `[Chat] enabled` and `relayEndpoint` from the supplied package example.
 If HUDModLoader later ships an FCM entry by default, the installer recognizes
