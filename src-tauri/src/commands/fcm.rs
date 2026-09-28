@@ -16,6 +16,9 @@ use super::errors::CommandResult;
 
 mod import;
 
+#[cfg(test)]
+mod acceptance;
+
 #[tauri::command]
 #[specta::specta]
 pub fn fcm_detect_import(paths: Vec<String>) -> CommandResult<bool> {

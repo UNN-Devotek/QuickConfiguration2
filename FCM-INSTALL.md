@@ -60,3 +60,29 @@ Configuration. Confirm exactly one FCM BA2 and loader entry, one matching archiv
 entry, and byte-for-byte preservation of unrelated INI lines. Then repeat an
 install, switch modes, remove, and restore the prior setup. Native chat and
 Server Bridge behavior require separate in-game verification.
+
+## Headless Linux acceptance
+
+The opt-in Rust acceptance test runs the same package detection, preview,
+planning, and apply code as **Mods → Install mod** without opening the app.
+Provide the downloaded production Linux overlay ZIP and HUD ZIP, plus the game
+and active Proton INI directories:
+
+```bash
+export FCM_LINUX_ZIP=/path/to/linux-overlay.zip
+export FCM_HUD_ZIP=/path/to/production-hud.zip
+export FCM_GAME_DIR=/path/to/Fallout76
+export FCM_INI_DIR='/path/to/My Games/Fallout 76'
+cargo test --manifest-path src-tauri/Cargo.toml headless_production_linux_install -- --ignored --nocapture --test-threads=1
+```
+
+This first run copies the current HUD and provider files into a temporary
+fixture. It installs the bridge, repeats that install, switches to the HUD,
+checks the selected BA2, loader and archive entries, and restores the fixture.
+To repeat against the live game, close Fallout 76, save a separate copy of every
+affected file, and rerun with `FCM_TEST_LIVE=1` and `FCM_BACKUP_DIR` set to a
+persistent directory outside the game. The test restores the original live
+bytes even if a validation check fails; the separate copy covers an interrupted
+process or failed restoration. Each apply also writes its normal backup
+manifest under `FCM_BACKUP_DIR`. Check the live files against the separate copy
+afterward. This test does not exercise the graphical file picker or native chat.
