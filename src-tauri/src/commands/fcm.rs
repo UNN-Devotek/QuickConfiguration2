@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Cursor, Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -10,9 +10,9 @@ use sha2::{Digest, Sha256};
 use specta::Type;
 use tauri::State;
 use uuid::Uuid;
-use zip::ZipArchive;
 
 use super::errors::CommandResult;
+use super::ini::ini_update;
 
 mod import;
 
@@ -175,98 +175,6 @@ fn hex_digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn zip_file(zip: &mut ZipArchive<Cursor<Vec<u8>>>, name: &str, limit: u64) -> Result<Vec<u8>> {
-    let mut entry = zip
-        .by_name(name)
-        .with_context(|| format!("Missing {name} in package"))?;
-    ensure!(
-        entry.size() <= limit && entry.is_file(),
-        "Invalid {name} in package"
-    );
-    let mut bytes = Vec::new();
-    entry.read_to_end(&mut bytes)?;
-    ensure!(bytes.len() as u64 <= limit, "Invalid {name} size");
-    Ok(bytes)
-}
-
-fn package_files(
-    action: FcmAction,
-    info: &FcmPackageInfo,
-    bytes: Vec<u8>,
-    provider: &str,
-) -> Result<Vec<(PathBuf, Vec<u8>)>> {
-    let mut zip = ZipArchive::new(Cursor::new(bytes))?;
-    let mut files = Vec::new();
-    match action {
-        FcmAction::InstallHud => {
-            let readme = String::from_utf8(zip_file(&mut zip, "README.txt", 200_000)?)?;
-            ensure!(
-                readme
-                    .lines()
-                    .any(|line| line.trim() == format!("Version: {}", info.version))
-                    && readme
-                        .lines()
-                        .any(|line| line.trim() == "Package provider: unified"),
-                "HUD package version or provider mismatch"
-            );
-            let folder = if provider == "zfe" {
-                "ZFE (Install for ZFE only)"
-            } else {
-                "xScal (Install for xScal only)"
-            };
-            let data = format!("{folder}/Data (drag the contents into data folder)");
-            let ba2 = zip_file(
-                &mut zip,
-                &format!("{data}/FCMChatWidget.ba2"),
-                20 * 1024 * 1024,
-            )?;
-            ensure!(
-                ba2.starts_with(b"BTDX")
-                    && ba2
-                        .windows(info.version.len())
-                        .any(|window| window == info.version.as_bytes()),
-                "Invalid HUD BA2 or version stamp"
-            );
-            files.push((PathBuf::from("Data/FCMChatWidget.ba2"), ba2));
-            files.push((
-                PathBuf::from("Data/FCMChat.ini"),
-                zip_file(&mut zip, &format!("{data}/FCMChat.ini"), 100_000)?,
-            ));
-            if provider == "zfe" {
-                files.push((
-                    PathBuf::from("Data/ZFE/TextChat/fragments/FCMChatWidget.ini"),
-                    zip_file(
-                        &mut zip,
-                        &format!("{data}/ZFE/TextChat/fragments/FCMChatWidget.ini"),
-                        100_000,
-                    )?,
-                ));
-            } else {
-                files.push((
-                    PathBuf::from("xscal.ini.example"),
-                    zip_file(&mut zip, &format!("{folder}/xscal.ini"), 10_000)?,
-                ));
-            }
-        }
-        FcmAction::InstallBridge => {
-            let build: serde_json::Value =
-                serde_json::from_slice(&zip_file(&mut zip, "BUILD.json", 10_000)?)?;
-            ensure!(
-                build["version"] == info.version && build["target"] == "prod",
-                "Bridge package version or target mismatch"
-            );
-            let ba2 = zip_file(&mut zip, "Data/FCMServerBridge.ba2", 2 * 1024 * 1024)?;
-            ensure!(ba2.starts_with(b"BTDX"), "Invalid bridge BA2");
-            if let Some(expected) = build["ba2Sha256"].as_str() {
-                ensure!(hex_digest(&ba2) == expected, "Bridge BA2 checksum mismatch");
-            }
-            files.push((PathBuf::from("Data/FCMServerBridge.ba2"), ba2));
-        }
-        FcmAction::Remove => bail!("Remove does not use a package"),
-    }
-    Ok(files)
-}
-
 fn game_running() -> bool {
     #[cfg(target_os = "linux")]
     {
@@ -341,6 +249,14 @@ fn add_change(
 }
 
 fn loader_text(input: &str, action: FcmAction) -> String {
+    if action == FcmAction::Remove
+        && !input.lines().any(|line| {
+            is_fcm_loader_entry(line, "FCMChatWidget")
+                || is_fcm_loader_entry(line, "FCMServerBridge")
+        })
+    {
+        return input.to_owned();
+    }
     let newline = if input.contains("\r\n") { "\r\n" } else { "\n" };
     let mut lines: Vec<&str> = input
         .lines()
@@ -367,68 +283,6 @@ fn is_fcm_loader_entry(line: &str, name: &str) -> bool {
     entry.eq_ignore_ascii_case(name) || entry.eq_ignore_ascii_case(&format!("{name}.swf"))
 }
 
-pub(super) fn ini_update(
-    input: &str,
-    section: &str,
-    key: &str,
-    value: Option<&str>,
-) -> Result<String> {
-    let newline = if input.contains("\r\n") { "\r\n" } else { "\n" };
-    let mut lines: Vec<String> = input
-        .lines()
-        .map(|line| line.trim_end_matches('\r').to_owned())
-        .collect();
-    let mut section_start = None;
-    let mut section_end = lines.len();
-    for (index, line) in lines.iter().enumerate() {
-        if line.trim().eq_ignore_ascii_case(&format!("[{section}]")) {
-            ensure!(section_start.is_none(), "Duplicate [{section}] section");
-            section_start = Some(index);
-        } else if section_start.is_some()
-            && line.trim().starts_with('[')
-            && line.trim().ends_with(']')
-        {
-            section_end = index;
-            break;
-        }
-    }
-    let Some(start) = section_start else {
-        if let Some(value) = value {
-            if !lines.is_empty() && !lines.last().is_some_and(String::is_empty) {
-                lines.push(String::new());
-            }
-            lines.push(format!("[{section}]"));
-            lines.push(format!("{key}={value}"));
-        }
-        return Ok(format!(
-            "{}{}",
-            lines.join(newline),
-            if lines.is_empty() { "" } else { newline }
-        ));
-    };
-    let matches: Vec<usize> = ((start + 1)..section_end)
-        .filter(|index| {
-            lines[*index]
-                .split_once('=')
-                .is_some_and(|(candidate, _)| candidate.trim().eq_ignore_ascii_case(key))
-        })
-        .collect();
-    ensure!(matches.len() <= 1, "Duplicate {key} key in [{section}]");
-    match (matches.first().copied(), value) {
-        (Some(index), Some(value)) => lines[index] = format!("{key}={value}"),
-        (Some(index), None) => {
-            lines.remove(index);
-        }
-        (None, Some(value)) => lines.insert(section_end, format!("{key}={value}")),
-        (None, None) => {}
-    }
-    Ok(format!(
-        "{}{}",
-        lines.join(newline),
-        if lines.is_empty() { "" } else { newline }
-    ))
-}
-
 fn ini_value(input: &str, section: &str, key: &str) -> Result<Option<String>> {
     let mut inside = false;
     let mut found = None;
@@ -449,6 +303,15 @@ fn ini_value(input: &str, section: &str, key: &str) -> Result<Option<String>> {
 
 fn archive_text(input: &str, action: FcmAction) -> Result<String> {
     let current = ini_value(input, "Archive", "sResourceArchive2List")?.unwrap_or_default();
+    if action == FcmAction::Remove
+        && !current.split(',').any(|item| {
+            ["FCMChatWidget.ba2", "FCMServerBridge.ba2"]
+                .iter()
+                .any(|name| item.trim().eq_ignore_ascii_case(name))
+        })
+    {
+        return Ok(input.to_owned());
+    }
     let mut entries: Vec<String> = current
         .split(',')
         .map(str::trim)
@@ -694,12 +557,14 @@ fn make_plan_with_prerequisites(
         }
     }
     let loader_after = loader_text(&loader_base, action);
-    add_change(
-        &mut changes,
-        loader,
-        Some(loader_after.into_bytes()),
-        "Select one FCM loader child",
-    )?;
+    if action != FcmAction::Remove || loader.exists() {
+        add_change(
+            &mut changes,
+            loader,
+            Some(loader_after.into_bytes()),
+            "Select one FCM loader child",
+        )?;
+    }
     let custom_after = archive_text(&custom_before, action)?;
     add_change(
         &mut changes,
@@ -908,6 +773,34 @@ mod tests {
     }
 
     #[test]
+    fn removing_orphan_ba2_does_not_create_or_rewrite_ini_files() -> Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let game = fixture.path().join("game");
+        let ini = fixture.path().join("ini");
+        fs::create_dir_all(game.join("Data"))?;
+        fs::create_dir_all(&ini)?;
+        fs::write(game.join("Fallout76.exe"), b"")?;
+        fs::write(game.join("Data/FCMChatWidget.ba2"), b"BTDX")?;
+        let custom = ini.join("Fallout76Custom.ini");
+        let original = b"; keep this exact layout\r\n[Archive]\r\nsResourceArchive2List=Other.ba2";
+        fs::write(&custom, original)?;
+        let (plan, _) = make_plan(
+            &game,
+            &ini,
+            "Fallout76",
+            FcmAction::Remove,
+            None,
+            Vec::new(),
+        )?;
+        assert_eq!(plan.changes.len(), 1);
+        apply_plan(plan, fixture.path())?;
+        assert!(!game.join("Data/FCMChatWidget.ba2").exists());
+        assert!(!game.join("Data/hudmodloader.ini").exists());
+        assert_eq!(fs::read(custom)?, original);
+        Ok(())
+    }
+
+    #[test]
     fn provider_detection_ignores_compatibility_names() -> Result<()> {
         let fixture = tempfile::tempdir()?;
         let game = fixture.path();
@@ -925,58 +818,6 @@ mod tests {
         assert_eq!(provider(game)?, "zfe");
         fs::write(game.join("dxgi.dll"), b"XSCALCHATV1 zfe-chat-v1")?;
         assert!(provider(game).is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn published_unified_hud_layout_selects_one_provider() -> Result<()> {
-        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        let options = zip::write::SimpleFileOptions::default();
-        let data = [
-            (
-                "README.txt",
-                "Version: 2.10.125\nPackage provider: unified\n",
-            ),
-            (
-                "ZFE (Install for ZFE only)/Data (drag the contents into data folder)/FCMChatWidget.ba2",
-                "BTDX zfe 2.10.125",
-            ),
-            (
-                "ZFE (Install for ZFE only)/Data (drag the contents into data folder)/FCMChat.ini",
-                "[FCMChat]\nopenKey=INSERT\n",
-            ),
-            (
-                "ZFE (Install for ZFE only)/Data (drag the contents into data folder)/ZFE/TextChat/fragments/FCMChatWidget.ini",
-                "[TextChat]\nenabled=true\n",
-            ),
-            (
-                "xScal (Install for xScal only)/Data (drag the contents into data folder)/FCMChatWidget.ba2",
-                "BTDX xscal 2.10.125",
-            ),
-            (
-                "xScal (Install for xScal only)/Data (drag the contents into data folder)/FCMChat.ini",
-                "[FCMChat]\nopenKey=INSERT\n",
-            ),
-            (
-                "xScal (Install for xScal only)/xscal.ini",
-                "[Chat]\nenabled=true\nrelayEndpoint=wss://falloutchatmod.com/relay\n",
-            ),
-        ];
-        for (name, contents) in data {
-            writer.start_file(name, options)?;
-            writer.write_all(contents.as_bytes())?;
-        }
-        let bytes = writer.finish()?.into_inner();
-        let info = FcmPackageInfo {
-            version: "2.10.125".to_owned(),
-            source: String::new(),
-        };
-        let zfe = package_files(FcmAction::InstallHud, &info, bytes.clone(), "zfe")?;
-        let xscal = package_files(FcmAction::InstallHud, &info, bytes, "xscal")?;
-        assert_eq!(zfe[0].1, b"BTDX zfe 2.10.125");
-        assert_eq!(xscal[0].1, b"BTDX xscal 2.10.125");
-        assert_eq!(zfe.len(), 3);
-        assert_eq!(xscal.len(), 3);
         Ok(())
     }
 

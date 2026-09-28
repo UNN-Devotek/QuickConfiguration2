@@ -185,6 +185,7 @@ export default function ModTable() {
 
   useEffect(() => {
     let active = true;
+    setFcmInstall(null);
     const refresh = () => {
       if (!gamePath) {
         setFcmInstall(null);
@@ -195,7 +196,10 @@ export default function ModTable() {
         .then((installed) => {
           if (active) setFcmInstall(installed);
         })
-        .catch(console.error);
+        .catch((error) => {
+          if (active) setFcmInstall(null);
+          console.error(error);
+        });
     };
     refresh();
     const unsubscribe = modsEventBus.onUIActionEvent((event) => {

@@ -16,6 +16,76 @@ use crate::features::stores::ini::{IniFile, IniFiles};
 use crate::utils::ini::IniAccessors;
 use crate::utils::paths::get_resources_path;
 
+fn read_snapshot(path: &Path) -> CommandResult<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub(crate) fn ini_update(
+    input: &str,
+    section: &str,
+    key: &str,
+    value: Option<&str>,
+) -> anyhow::Result<String> {
+    let newline = if input.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut lines: Vec<String> = input
+        .lines()
+        .map(|line| line.trim_end_matches('\r').to_owned())
+        .collect();
+    let mut section_start = None;
+    let mut section_end = lines.len();
+    for (index, line) in lines.iter().enumerate() {
+        if line.trim().eq_ignore_ascii_case(&format!("[{section}]")) {
+            anyhow::ensure!(section_start.is_none(), "Duplicate [{section}] section");
+            section_start = Some(index);
+        } else if section_start.is_some()
+            && line.trim().starts_with('[')
+            && line.trim().ends_with(']')
+        {
+            section_end = index;
+            break;
+        }
+    }
+    let Some(start) = section_start else {
+        if let Some(value) = value {
+            if !lines.is_empty() && !lines.last().is_some_and(String::is_empty) {
+                lines.push(String::new());
+            }
+            lines.push(format!("[{section}]"));
+            lines.push(format!("{key}={value}"));
+        }
+        return Ok(format!(
+            "{}{}",
+            lines.join(newline),
+            if lines.is_empty() { "" } else { newline }
+        ));
+    };
+    let matches: Vec<usize> = ((start + 1)..section_end)
+        .filter(|index| {
+            lines[*index]
+                .split_once('=')
+                .is_some_and(|(candidate, _)| candidate.trim().eq_ignore_ascii_case(key))
+        })
+        .collect();
+    anyhow::ensure!(matches.len() <= 1, "Duplicate {key} key in [{section}]");
+    match (matches.first().copied(), value) {
+        (Some(index), Some(value)) => lines[index] = format!("{key}={value}"),
+        (Some(index), None) => {
+            lines.remove(index);
+        }
+        (None, Some(value)) => lines.insert(section_end, format!("{key}={value}")),
+        (None, None) => {}
+    }
+    Ok(format!(
+        "{}{}",
+        lines.join(newline),
+        if lines.is_empty() { "" } else { newline }
+    ))
+}
+
 fn merge_changed_keys(baseline: &[u8], desired: &Ini) -> CommandResult<Vec<u8>> {
     let original = String::from_utf8(baseline.to_vec()).map_err(|error| CommandError::String {
         message: format!("INI is not UTF-8: {error}"),
@@ -26,13 +96,8 @@ fn merge_changed_keys(baseline: &[u8], desired: &Ini) -> CommandResult<Vec<u8>> 
         let Some(section) = section else { continue };
         for (key, value) in properties.iter() {
             if desired.get_from(Some(section), key) != Some(value) {
-                merged = super::fcm::ini_update(
-                    &merged,
-                    section,
-                    key,
-                    desired.get_from(Some(section), key),
-                )
-                .map_err(CommandError::from)?;
+                merged = ini_update(&merged, section, key, desired.get_from(Some(section), key))
+                    .map_err(CommandError::from)?;
             }
         }
     }
@@ -40,8 +105,8 @@ fn merge_changed_keys(baseline: &[u8], desired: &Ini) -> CommandResult<Vec<u8>> 
         let Some(section) = section else { continue };
         for (key, value) in properties.iter() {
             if previous.get_from(Some(section), key).is_none() {
-                merged = super::fcm::ini_update(&merged, section, key, Some(value))
-                    .map_err(CommandError::from)?;
+                merged =
+                    ini_update(&merged, section, key, Some(value)).map_err(CommandError::from)?;
             }
         }
     }
@@ -205,6 +270,11 @@ pub fn _ini_load(
     let main_path = Path::new(&ini_path).join(format!("{}.ini", ini_prefix));
     let prefs_path = Path::new(&ini_path).join(format!("{}Prefs.ini", ini_prefix));
     let custom_path = Path::new(&ini_path).join(format!("{}Custom.ini", ini_prefix));
+    let loaded_bytes = [
+        read_snapshot(&main_path)?,
+        read_snapshot(&prefs_path)?,
+        read_snapshot(&custom_path)?,
+    ];
 
     // Lock state mutexes:
     let mut main_lock = main
@@ -251,8 +321,16 @@ pub fn _ini_load(
         })?;
 
     let mut snapshots = baselines.lock()?;
-    for path in [&main_path, &prefs_path, &custom_path] {
-        snapshots.insert(path.clone(), std::fs::read(path).ok());
+    for (path, expected) in [&main_path, &prefs_path, &custom_path]
+        .into_iter()
+        .zip(loaded_bytes)
+    {
+        if read_snapshot(path)? != expected {
+            return Err(CommandError::String {
+                message: format!("{} changed while loading; reload INI files", path.display()),
+            });
+        }
+        snapshots.insert(path.clone(), expected);
     }
 
     Ok(())
@@ -314,7 +392,7 @@ pub fn _ini_save(
                 path.display()
             ),
         })?;
-        if &std::fs::read(path).ok() != expected {
+        if &read_snapshot(path)? != expected {
             return Err(CommandError::String {
                 message: format!(
                     "{} changed outside Quick Configuration; reload before saving",
@@ -351,7 +429,7 @@ pub fn _ini_save(
     }
 
     for path in [&main_path, &prefs_path, &custom_path] {
-        snapshots.insert(path.clone(), std::fs::read(path).ok());
+        snapshots.insert(path.clone(), read_snapshot(path)?);
     }
 
     Ok(())
@@ -361,6 +439,14 @@ pub fn _ini_save(
 mod external_edit_tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn snapshot_distinguishes_missing_file_from_read_error() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        assert_eq!(read_snapshot(&dir.path().join("missing.ini"))?, None);
+        assert!(read_snapshot(dir.path()).is_err());
+        Ok(())
+    }
 
     #[test]
     fn normal_save_updates_main_and_prefs_without_changing_other_files() -> anyhow::Result<()> {

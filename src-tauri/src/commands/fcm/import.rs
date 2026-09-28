@@ -1,15 +1,19 @@
 use std::collections::HashSet;
 use std::fs::{self, File};
-use std::io::{Cursor, Read, Write};
+#[cfg(test)]
+use std::io::Write;
+use std::io::{Cursor, Read};
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
 use regex::bytes::Regex;
 use semver::Version;
-use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+use zip::ZipArchive;
+#[cfg(test)]
+use zip::{ZipWriter, write::SimpleFileOptions};
 
 use super::{
-    FcmAction, FcmPackageInfo, FcmPlans, FcmPreview, make_plan_with_prerequisites, package_files,
+    FcmAction, FcmPackageInfo, FcmPlans, FcmPreview, hex_digest, make_plan_with_prerequisites,
     probe_prerequisites,
 };
 
@@ -171,6 +175,7 @@ impl ImportSource {
     }
 }
 
+#[cfg(test)]
 fn package_zip(entries: Vec<(String, Vec<u8>)>) -> Result<Vec<u8>> {
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     for (name, bytes) in entries {
@@ -211,12 +216,12 @@ fn import_bridge(
         "Only production bridge packages are supported"
     );
     let ba2 = source.read(&ba2_name, 2 * 1024 * 1024)?;
+    ensure!(ba2.starts_with(b"BTDX"), "Invalid bridge BA2");
+    if let Some(expected) = metadata["ba2Sha256"].as_str() {
+        ensure!(hex_digest(&ba2) == expected, "Bridge BA2 checksum mismatch");
+    }
     let info = local_package_info(version.to_owned());
-    let bytes = package_zip(vec![
-        ("BUILD.json".to_owned(), build),
-        ("Data/FCMServerBridge.ba2".to_owned(), ba2),
-    ])?;
-    let files = package_files(FcmAction::InstallBridge, &info, bytes, "zfe")?;
+    let files = vec![(PathBuf::from("Data/FCMServerBridge.ba2"), ba2)];
     Ok(ImportedPackage {
         action: FcmAction::InstallBridge,
         info,
@@ -326,42 +331,33 @@ fn import_hud(
     );
     let ba2 = source.read(ba2_name, 20 * 1024 * 1024)?;
     let version = hud_version(source, names, root, &ba2)?;
+    ensure!(
+        ba2.starts_with(b"BTDX")
+            && ba2
+                .windows(version.len())
+                .any(|window| window == version.as_bytes()),
+        "Invalid HUD BA2 or version stamp"
+    );
     let info = local_package_info(version.clone());
     let use_zfe = package_provider == "zfe";
-    let folder = if use_zfe {
-        "ZFE (Install for ZFE only)"
-    } else {
-        "xScal (Install for xScal only)"
-    };
-    let data = format!("{folder}/Data (drag the contents into data folder)");
-    let mut entries = vec![
+    let mut files = vec![
+        (PathBuf::from("Data/FCMChatWidget.ba2"), ba2),
         (
-            "README.txt".to_owned(),
-            format!("Version: {version}\nPackage provider: unified\n").into_bytes(),
-        ),
-        (format!("{data}/FCMChatWidget.ba2"), ba2),
-        (
-            format!("{data}/FCMChat.ini"),
+            PathBuf::from("Data/FCMChat.ini"),
             source.read(&chat_name, 100_000)?,
         ),
     ];
     if use_zfe {
-        entries.push((
-            format!("{data}/ZFE/TextChat/fragments/FCMChatWidget.ini"),
+        files.push((
+            PathBuf::from("Data/ZFE/TextChat/fragments/FCMChatWidget.ini"),
             source.read(&zfe_name, 100_000)?,
         ));
     } else {
-        entries.push((
-            format!("{folder}/xscal.ini"),
+        files.push((
+            PathBuf::from("xscal.ini.example"),
             source.read(&xscal_name, 10_000)?,
         ));
     }
-    let files = package_files(
-        FcmAction::InstallHud,
-        &info,
-        package_zip(entries)?,
-        selected_provider,
-    )?;
     Ok(ImportedPackage {
         action: FcmAction::InstallHud,
         info,
