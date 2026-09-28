@@ -342,6 +342,10 @@ pub fn _ini_save(
             })?)?;
             use std::io::Write;
             temp.write_all(&merged)?;
+            if snapshots.get(path).and_then(Option::as_ref).is_some() {
+                temp.as_file()
+                    .set_permissions(fs::metadata(path)?.permissions())?;
+            }
             temp.persist(path).map_err(|error| error.error)?;
         }
     }
@@ -357,6 +361,75 @@ pub fn _ini_save(
 mod external_edit_tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn normal_save_updates_main_and_prefs_without_changing_other_files() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let main_path = dir.path().join("Fallout76.ini");
+        let prefs_path = dir.path().join("Fallout76Prefs.ini");
+        let custom_path = dir.path().join("Fallout76Custom.ini");
+        std::fs::write(
+            &main_path,
+            "; player note\r\n[Display]\r\nbFullScreen=1\r\n[Other]\r\nkeep=yes\r\n",
+        )?;
+        std::fs::write(
+            &prefs_path,
+            "; another note\r\n[Audio]\r\nfMasterVolume=1.0\r\n[Other]\r\nkeep=yes\r\n",
+        )?;
+        let custom_before = b"[Archive]\r\nsResourceArchive2List=FCMChatWidget.ba2\r\n";
+        std::fs::write(&custom_path, custom_before)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&main_path, std::fs::Permissions::from_mode(0o644))?;
+            std::fs::set_permissions(&prefs_path, std::fs::Permissions::from_mode(0o644))?;
+        }
+
+        let main = Arc::new(Mutex::new(Ini::new()));
+        let prefs = Arc::new(Mutex::new(Ini::new()));
+        let custom = Arc::new(Mutex::new(Ini::new()));
+        let baselines = Arc::new(Mutex::new(HashMap::new()));
+        let path = dir.path().display().to_string();
+        _ini_load(
+            path.clone(),
+            "Fallout76".to_owned(),
+            main.clone(),
+            prefs.clone(),
+            custom.clone(),
+            baselines.clone(),
+        )?;
+        main.lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .set_to(Some("Display"), "bFullScreen".to_owned(), "0".to_owned());
+        prefs
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .set_to(Some("Audio"), "fMasterVolume".to_owned(), "0.5".to_owned());
+        _ini_save(path, "Fallout76".to_owned(), main, prefs, custom, baselines)?;
+
+        let main_after = std::fs::read_to_string(&main_path)?;
+        let prefs_after = std::fs::read_to_string(&prefs_path)?;
+        assert!(main_after.starts_with("; player note\r\n"));
+        assert!(main_after.contains("bFullScreen=0\r\n"));
+        assert!(main_after.contains("[Other]\r\nkeep=yes\r\n"));
+        assert!(prefs_after.starts_with("; another note\r\n"));
+        assert!(prefs_after.contains("fMasterVolume=0.5\r\n"));
+        assert!(prefs_after.contains("[Other]\r\nkeep=yes\r\n"));
+        assert_eq!(std::fs::read(custom_path)?, custom_before);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(main_path)?.permissions().mode() & 0o777,
+                0o644
+            );
+            assert_eq!(
+                std::fs::metadata(prefs_path)?.permissions().mode() & 0o777,
+                0o644
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn stale_state_does_not_overwrite_external_custom_ini_edit() -> anyhow::Result<()> {
