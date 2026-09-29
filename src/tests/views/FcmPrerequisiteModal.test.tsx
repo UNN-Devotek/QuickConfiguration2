@@ -6,7 +6,13 @@ import { useSettingsStore } from "@/stores/settings";
 import FcmPrerequisiteModal, {
   latestMainZip,
 } from "@/views/mods/tabs/modOrder/modals/modInstallation/FcmPrerequisiteModal";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { vi } from "vitest";
 
 vi.mock("@/commands/bindings", () => ({
@@ -14,6 +20,7 @@ vi.mock("@/commands/bindings", () => ({
     fcmPrerequisiteDownloadLinks: vi.fn(),
     downloadWithProgress: vi.fn(),
     fcmPreviewImport: vi.fn(),
+    fcmDiscard: vi.fn(),
     nxmIsRegistered: vi.fn(),
     nxmRegister: vi.fn(),
   },
@@ -96,6 +103,7 @@ beforeEach(() => {
     .mockResolvedValueOnce("/downloads/provider.zip")
     .mockResolvedValueOnce("/downloads/loader.zip");
   vi.mocked(commands.fcmPreviewImport).mockResolvedValue(preview);
+  vi.mocked(commands.fcmDiscard).mockResolvedValue(null);
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -227,4 +235,36 @@ it("does not download prerequisites for a different selected profile", async () 
     expect(screen.getByText("fcmImport.profileChanged")).toBeInTheDocument(),
   );
   expect(NexusMods.api.listModFiles).not.toHaveBeenCalled();
+});
+
+it("discards a preview completed after the profile changes", async () => {
+  let resolvePreview: (value: FcmPreview) => void = () => undefined;
+  vi.mocked(commands.fcmPreviewImport).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolvePreview = resolve;
+      }),
+  );
+  const onPreview = vi.fn();
+  render(
+    <FcmPrerequisiteModal
+      request={{
+        paths: ["/downloads/hud.zip"],
+        probe: { provider: "zfe", hudModLoader: false },
+        profile,
+      }}
+      onAbort={vi.fn()}
+      onPreview={onPreview}
+    />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "fcmImport.downloadPrerequisites" }),
+  );
+  await waitFor(() => expect(commands.fcmPreviewImport).toHaveBeenCalled());
+  useProfilesStore.getState().setStore({ selected: "other-profile" });
+  await act(async () => resolvePreview(preview));
+  await waitFor(() =>
+    expect(commands.fcmDiscard).toHaveBeenCalledWith("review"),
+  );
+  expect(onPreview).not.toHaveBeenCalled();
 });

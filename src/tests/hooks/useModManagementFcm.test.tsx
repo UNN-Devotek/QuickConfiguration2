@@ -4,6 +4,7 @@ import { useModManagement } from "@/hooks/mods/useModManagement";
 import { FCM_MOD_KEY, modsEventBus } from "@/services/mods";
 import { resourceListStoreSync } from "@/stores/resourceList";
 import { useProfilesStore } from "@/stores/profiles";
+import { useToastsStore } from "@/stores/toasts";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
@@ -11,6 +12,7 @@ vi.mock("@/commands/bindings", () => ({
   commands: {
     fcmPreviewRemove: vi.fn(),
     fcmApply: vi.fn(),
+    fcmDiscard: vi.fn(),
     iniLoad: vi.fn(),
   },
 }));
@@ -78,6 +80,7 @@ beforeEach(() => {
   });
   vi.mocked(commands.fcmPreviewRemove).mockResolvedValue(removalPreview);
   vi.mocked(commands.fcmApply).mockResolvedValue("/backups/fcm");
+  vi.mocked(commands.fcmDiscard).mockResolvedValue(null);
   vi.mocked(resourceListStoreSync.flushSave).mockResolvedValue();
   vi.mocked(resourceListStoreSync.load).mockResolvedValue();
 });
@@ -122,4 +125,33 @@ it("keeps ordinary mods on the existing uninstall command", async () => {
     expect(Mods.actions.mod.uninstall).toHaveBeenCalledTimes(1),
   );
   expect(commands.fcmPreviewRemove).not.toHaveBeenCalled();
+});
+
+it("discards a canceled removal preview", async () => {
+  const hook = renderHook(() => useModManagement());
+  act(() => hook.result.current.deleteMod(FCM_MOD_KEY));
+  await waitFor(() =>
+    expect(hook.result.current.deleteModModalProps.show).toBe(true),
+  );
+  act(() => hook.result.current.deleteModModalProps.onAbort());
+  expect(commands.fcmDiscard).toHaveBeenCalledWith("remove-token");
+  expect(commands.fcmApply).not.toHaveBeenCalled();
+});
+
+it("reports a successful removal even when reloading settings fails", async () => {
+  vi.mocked(commands.iniLoad).mockRejectedValueOnce(new Error("reload failed"));
+  const changed = vi.spyOn(modsEventBus, "emitFcmChanged");
+  const hook = renderHook(() => useModManagement());
+  act(() => hook.result.current.deleteMod(FCM_MOD_KEY));
+  await waitFor(() =>
+    expect(hook.result.current.deleteModModalProps.show).toBe(true),
+  );
+  act(() => hook.result.current.deleteModModalProps.onConfirm(FCM_MOD_KEY));
+  await waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(useToastsStore.getState().toasts.at(-1)?.variant).toBe("warning"),
+  );
+  expect(commands.fcmApply).toHaveBeenCalledTimes(1);
+  expect(Mods.actions.mod.uninstall).not.toHaveBeenCalled();
+  changed.mockRestore();
 });

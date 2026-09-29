@@ -52,12 +52,20 @@ needed. A changed file between preview and apply blocks the operation.
 An import preview is bound to the selected profile and its game and INI paths;
 switching profiles requires starting the import again. Linux game detection
 recognizes both Unix and Proton's Windows-style path separators.
+Canceled previews are discarded. If a deployed mod already owns an FCM BA2,
+remove it through that mod's normal row before using the guided installer;
+the guided row is hidden while the managed mod owns it. The installer also
+refuses linked BA2 files so it cannot alter another mod's source archive.
+Existing linked INI files are updated through their links and remain linked.
 
 Quick Configuration's normal INI save now checks whether any file changed on
 disk since it was loaded. If so, it refuses to overwrite the newer file and
 asks you to reload. Normal saves write only changed keys and preserve unrelated
 lines, comments, and existing file permissions. After a guided install, the UI
-reloads its INI and resource list state. The fork retains Quick Configuration's
+reloads its INI and resource list state. If that reload fails, the applied
+operation still reports its backup and a separate warning asks for a profile
+reload before further settings changes. Existing linked INIs remain linked
+after ordinary saves. The fork retains Quick Configuration's
 upstream update check and installation controls. Installing an upstream update can replace this fork's
 FCM integration, so reinstall a fork build afterward if that happens.
 Local unsigned builds and fork CI use `src-tauri/tauri.fcm-unsigned.conf.json`

@@ -113,3 +113,23 @@ it("refuses to apply a preview after the selected profile changes", async () => 
   );
   expect(commands.fcmApply).not.toHaveBeenCalled();
 });
+
+it("shows applied success and a separate warning if the settings reload fails", async () => {
+  vi.mocked(commands.iniLoad).mockRejectedValueOnce(new Error("reload failed"));
+  const onApplied = vi.fn();
+  render(
+    <FcmImportModal
+      preview={preview}
+      profile={profile}
+      onAbort={vi.fn()}
+      onApplied={onApplied}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "fcmImport.apply" }));
+  await waitFor(() => expect(onApplied).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(useToastsStore.getState().toasts.at(-1)?.variant).toBe("warning"),
+  );
+  expect(commands.fcmApply).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("reload failed")).not.toBeInTheDocument();
+});

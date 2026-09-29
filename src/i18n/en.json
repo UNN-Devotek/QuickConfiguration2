@@ -21,6 +21,8 @@
     "bridge": "Server Bridge",
     "previewExpired": "The FCM removal preview expired. Select Delete again.",
     "profileChanged": "The selected game profile changed. Start the FCM action again.",
+    "managedOwner": "{{mod}} already manages an FCM archive. Remove that mod through its normal mod row before using the guided FCM installer.",
+    "refreshFailed": "FCM changes were applied, but Quick Configuration could not reload its settings: {{error}}. Reload the profile before saving more settings.",
     "packageVersion": "Package version {{version}} from {{source}}",
     "review": "Review file changes",
     "detected": "Provider: {{provider}}. Current FCM mod: {{installed}}.",

@@ -193,9 +193,13 @@ export default function FcmPrerequisiteModal({
         providerZip,
         loaderZip,
       );
-      if (!active.signal.aborted) {
-        if (!isFcmImportProfileActive(request.profile))
+      if (active.signal.aborted || !isFcmImportProfileActive(request.profile)) {
+        await commands.fcmDiscard(preview.token);
+        if (!active.signal.aborted)
           throw new Error(t("fcmImport.profileChanged"));
+        return;
+      }
+      if (!active.signal.aborted) {
         onPreview(preview, request.profile);
       }
     } catch (reason) {

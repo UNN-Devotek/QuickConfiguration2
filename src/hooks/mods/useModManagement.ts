@@ -4,6 +4,7 @@ import Mods from "@/commands/mods";
 import {
   FCM_MOD_KEY,
   createBaseManagedMod,
+  getFcmManagedOwner,
   modsEventBus,
 } from "@/services/mods";
 import { updateModsStore, useModsStore } from "@/stores/mods";
@@ -32,6 +33,11 @@ function useModDeletionModal() {
     try {
       const profile = useProfilesStore.getState().getSelectedProfile();
       if (!profile) throw new Error(t("errors.profileNotSet"));
+      const owner = getFcmManagedOwner(
+        useModsStore.getState().getManagedMods(),
+      );
+      if (owner)
+        throw new Error(t("fcmImport.managedOwner", { mod: owner.title }));
       modsEventBus.emitProgressUpdated(t("fcmImport.inspecting"));
       await resourceListStoreSync.flushSave();
       const preview = await commands.fcmPreviewRemove(
@@ -40,8 +46,12 @@ function useModDeletionModal() {
         profile.iniPrefix,
       );
       modsEventBus.emitProgressFinished();
-      if (useProfilesStore.getState().selected !== profile.key) return;
+      if (useProfilesStore.getState().selected !== profile.key) {
+        await commands.fcmDiscard(preview.token);
+        return;
+      }
       if (!preview.changes.length) {
+        await commands.fcmDiscard(preview.token);
         modsEventBus.emitFcmChanged();
         return;
       }
@@ -65,8 +75,11 @@ function useModDeletionModal() {
     try {
       if (key === FCM_MOD_KEY) {
         if (!fcmRemoval) throw new Error(t("fcmImport.previewExpired"));
-        if (useProfilesStore.getState().selected !== fcmRemoval.profileKey)
+        if (useProfilesStore.getState().selected !== fcmRemoval.profileKey) {
+          await commands.fcmDiscard(fcmRemoval.preview.token);
+          setFcmRemoval(null);
           throw new Error(t("fcmImport.profileChanged"));
+        }
         modsEventBus.emitProgressUpdated(
           t("mods.modOrderTab.progress.deletingMod"),
         );
@@ -74,8 +87,6 @@ function useModDeletionModal() {
         const backup = await commands.fcmApply(fcmRemoval.preview.token);
         setFcmRemoval(null);
         modsEventBus.emitFcmChanged();
-        await commands.iniLoad(fcmRemoval.iniPath, fcmRemoval.iniPrefix);
-        await resourceListStoreSync.load();
         modsEventBus.emitProgressFinished();
         useToastsStore
           .getState()
@@ -83,6 +94,20 @@ function useModDeletionModal() {
             t("mods.modOrderTab.toasts.modDeleted"),
             t("fcmImport.completed", { backup }),
           );
+        try {
+          await commands.iniLoad(fcmRemoval.iniPath, fcmRemoval.iniPrefix);
+          await resourceListStoreSync.load();
+        } catch (error) {
+          useToastsStore
+            .getState()
+            .addToast(
+              t("fcmImport.title"),
+              t("fcmImport.refreshFailed", {
+                error: commandErrorToString(error as AnyError),
+              }),
+              "warning",
+            );
+        }
         return;
       }
       const modsPath = useProfilesStore.getState().getModsPath();
@@ -124,6 +149,8 @@ function useModDeletionModal() {
         prepareFcmDeletion().catch(console.error);
         return;
       }
+      if (fcmRemoval)
+        commands.fcmDiscard(fcmRemoval.preview.token).catch(console.error);
       setFcmRemoval(null);
       setShow(true);
       setMod(getMod(key));
@@ -137,6 +164,8 @@ function useModDeletionModal() {
         uninstallMod(key).catch(console.error);
       },
       onAbort: () => {
+        if (fcmRemoval)
+          commands.fcmDiscard(fcmRemoval.preview.token).catch(console.error);
         setShow(false);
         setFcmRemoval(null);
       },

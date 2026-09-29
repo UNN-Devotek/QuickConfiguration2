@@ -29,26 +29,41 @@ export default function FcmImportModal({
     if (!preview || !profile) return;
     setPending(true);
     setError("");
+    let backup: string;
     try {
       if (!isFcmImportProfileActive(profile))
         throw new Error(t("fcmImport.profileChanged"));
       resourceListStoreSync.cancelSave();
-      const backup = await commands.fcmApply(preview.token);
+      backup = await commands.fcmApply(preview.token);
+    } catch (reason) {
+      setError(commandErrorToString(reason as AnyError));
+      setPending(false);
+      return;
+    }
+    modsEventBus.emitFcmChanged();
+    useToastsStore
+      .getState()
+      .addToast(
+        t("fcmImport.title"),
+        t("fcmImport.completed", { backup }),
+        "success",
+      );
+    onApplied();
+    try {
       if (isFcmImportProfileActive(profile)) {
         await commands.iniLoad(profile.iniPath, profile.iniPrefix);
         await resourceListStoreSync.load();
       }
-      modsEventBus.emitFcmChanged();
+    } catch (reason) {
       useToastsStore
         .getState()
         .addToast(
           t("fcmImport.title"),
-          t("fcmImport.completed", { backup }),
-          "success",
+          t("fcmImport.refreshFailed", {
+            error: commandErrorToString(reason as AnyError),
+          }),
+          "warning",
         );
-      onApplied();
-    } catch (reason) {
-      setError(commandErrorToString(reason as AnyError));
     } finally {
       setPending(false);
     }

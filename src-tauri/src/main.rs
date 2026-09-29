@@ -45,6 +45,7 @@ fn main() {
             commands::fcm::fcm_prerequisite_download_links,
             commands::fcm::fcm_preview_import,
             commands::fcm::fcm_apply,
+            commands::fcm::fcm_discard,
             commands::ini::ini_load,
             commands::ini::ini_save,
             commands::ini::ini_create_files,

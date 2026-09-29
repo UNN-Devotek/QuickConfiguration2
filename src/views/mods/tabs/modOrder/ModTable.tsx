@@ -8,7 +8,7 @@ import Entry from "@/components/common/Entry";
 import { FlexCol, FlexRow } from "@/components/common/Flex";
 import useModinfos from "@/hooks/nexusmods/useModinfos";
 import { useDragAndDrop } from "@/hooks/useDragAndDrop";
-import { FCM_MOD_KEY, modsEventBus } from "@/services/mods";
+import { FCM_MOD_KEY, getFcmManagedOwner, modsEventBus } from "@/services/mods";
 import { useModsStore } from "@/stores/mods";
 import { useProfilesStore } from "@/stores/profiles";
 import { useSettingsStore } from "@/stores/settings";
@@ -212,6 +212,7 @@ export default function ModTable() {
   }, [gamePath]);
 
   const mods = useModsStore((store) => store.mods);
+  const deployedState = useModsStore((store) => store.state);
   const getModState = useModsStore((store) => store.getModState);
   const setMods = useModsStore((store) => store.setMods);
   const enableMod = useModsStore((store) => store.enableMod);
@@ -359,6 +360,7 @@ export default function ModTable() {
           ))}
         </tbody>
         {fcmInstall &&
+          !getFcmManagedOwner({ enabled: true, mods, state: deployedState }) &&
           `${t("fcmImport.modTitle")} ${fcmInstall}`
             .toLocaleLowerCase()
             .includes(filter.toLocaleLowerCase()) && (

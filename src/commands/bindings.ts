@@ -103,6 +103,9 @@ async fcmPreviewImport(gamePath: string, iniPath: string, iniPrefix: string, pat
 async fcmApply(token: string) : Promise<string> {
     return await TAURI_INVOKE("fcm_apply", { token });
 },
+async fcmDiscard(token: string) : Promise<null> {
+    return await TAURI_INVOKE("fcm_discard", { token });
+},
 async iniLoad(iniPath: string, iniPrefix: string) : Promise<null> {
     return await TAURI_INVOKE("ini_load", { iniPath, iniPrefix });
 },

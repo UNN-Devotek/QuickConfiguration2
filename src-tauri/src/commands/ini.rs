@@ -412,18 +412,19 @@ pub fn _ini_save(
             .unwrap_or_default();
         let merged = merge_changed_keys(baseline, desired)?;
         if merged != baseline {
-            let mut temp = tempfile::NamedTempFile::new_in(path.parent().ok_or_else(|| {
-                CommandError::String {
-                    message: format!("{} has no parent directory", path.display()),
-                }
-            })?)?;
-            use std::io::Write;
-            temp.write_all(&merged)?;
             if snapshots.get(path).and_then(Option::as_ref).is_some() {
-                temp.as_file()
-                    .set_permissions(fs::metadata(path)?.permissions())?;
+                fs::write(path, &merged)?;
+            } else {
+                let mut temp =
+                    tempfile::NamedTempFile::new_in(path.parent().ok_or_else(|| {
+                        CommandError::String {
+                            message: format!("{} has no parent directory", path.display()),
+                        }
+                    })?)?;
+                use std::io::Write;
+                temp.write_all(&merged)?;
+                temp.persist(path).map_err(|error| error.error)?;
             }
-            temp.persist(path).map_err(|error| error.error)?;
         }
     }
 
@@ -528,6 +529,59 @@ mod external_edit_tests {
                 0o644
             );
         }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn normal_save_preserves_hardlinks_and_symlinks() -> anyhow::Result<()> {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("main-source.ini");
+        let main = dir.path().join("Fallout76.ini");
+        let prefs = dir.path().join("Fallout76Prefs.ini");
+        let custom_source = dir.path().join("custom-source.ini");
+        let custom = dir.path().join("Fallout76Custom.ini");
+        fs::write(&source, "[Display]\nfoo=1\n")?;
+        fs::hard_link(&source, &main)?;
+        fs::write(&prefs, "[Display]\nfoo=1\n")?;
+        fs::write(&custom_source, "[Archive]\nkeep=yes\n")?;
+        std::os::unix::fs::symlink(&custom_source, &custom)?;
+        let main_state = Arc::new(Mutex::new(Ini::new()));
+        let prefs_state = Arc::new(Mutex::new(Ini::new()));
+        let custom_state = Arc::new(Mutex::new(Ini::new()));
+        let baselines = Arc::new(Mutex::new(HashMap::new()));
+        let path = dir.path().display().to_string();
+        _ini_load(
+            path.clone(),
+            "Fallout76".to_owned(),
+            main_state.clone(),
+            prefs_state.clone(),
+            custom_state.clone(),
+            baselines.clone(),
+        )?;
+        main_state
+            .lock()
+            .unwrap()
+            .set_to(Some("Display"), "foo".to_owned(), "2".to_owned());
+        custom_state.lock().unwrap().set_to(
+            Some("Archive"),
+            "keep".to_owned(),
+            "changed".to_owned(),
+        );
+        _ini_save(
+            path,
+            "Fallout76".to_owned(),
+            main_state,
+            prefs_state,
+            custom_state,
+            baselines,
+        )?;
+        assert_eq!(fs::metadata(&source)?.ino(), fs::metadata(&main)?.ino());
+        assert!(custom.is_symlink());
+        assert!(fs::read_to_string(source)?.contains("foo=2"));
+        assert!(fs::read_to_string(custom_source)?.contains("keep=changed"));
         Ok(())
     }
 

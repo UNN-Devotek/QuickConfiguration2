@@ -1,4 +1,9 @@
-import { commands, type FcmPreview } from "@/commands/bindings";
+import {
+  commands,
+  type FcmPreview,
+  type ManagedMod,
+  type ModInstallationState,
+} from "@/commands/bindings";
 import Mods from "@/commands/mods";
 import { useModInstallation } from "@/hooks/mods/useModInstallation";
 import { resourceListStoreSync } from "@/stores/resourceList";
@@ -6,11 +11,17 @@ import { useProfilesStore } from "@/stores/profiles";
 import { act, renderHook } from "@testing-library/react";
 import { vi } from "vitest";
 
+const managed = vi.hoisted(() => ({
+  mods: [] as ManagedMod[],
+  state: [] as ModInstallationState[],
+}));
+
 vi.mock("@/commands/bindings", () => ({
   commands: {
     fcmDetectImport: vi.fn(),
     fcmProbePrerequisites: vi.fn(),
     fcmPreviewImport: vi.fn(),
+    fcmDiscard: vi.fn(),
   },
 }));
 
@@ -33,7 +44,7 @@ vi.mock("@/stores/resourceList", () => ({
 vi.mock("@/stores/mods", () => ({
   updateModsStore: vi.fn(),
   useModsStore: {
-    getState: vi.fn(),
+    getState: () => ({ getManagedMods: () => managed }),
   },
 }));
 
@@ -42,6 +53,8 @@ vi.mock("react-i18next", () => ({
 }));
 
 beforeEach(() => {
+  managed.mods = [];
+  managed.state = [];
   useProfilesStore.getState().setStore({
     profiles: [
       {
@@ -73,6 +86,7 @@ beforeEach(() => {
     package: null,
     changes: [],
   } satisfies FcmPreview);
+  vi.mocked(commands.fcmDiscard).mockResolvedValue(null);
   vi.mocked(resourceListStoreSync.flushSave).mockResolvedValue();
 });
 
@@ -104,6 +118,29 @@ it("routes an FCM ZIP through safe preview before ordinary mod staging", async (
   expect(hook.result.current.fcmModalProps.preview?.token).toBe(
     "preview-token",
   );
+});
+
+it("keeps FCM packages owned by the normal mod manager on that path", async () => {
+  managed.mods = [{ key: "managed-fcm", title: "Managed FCM" } as ManagedMod];
+  managed.state = [
+    { key: "managed-fcm", rootFolder: "Data", files: ["FCMChatWidget.ba2"] },
+  ];
+  const hook = renderHook(() => useModInstallation());
+  await act(async () => {
+    await hook.result.current.installFromFileWithPath("/downloads/hud.zip", {});
+  });
+  expect(commands.fcmProbePrerequisites).not.toHaveBeenCalled();
+  expect(commands.fcmPreviewImport).not.toHaveBeenCalled();
+  expect(hook.result.current.fcmModalProps.preview).toBeNull();
+});
+
+it("discards a canceled preview", async () => {
+  const hook = renderHook(() => useModInstallation());
+  await act(async () => {
+    await hook.result.current.installFromFileWithPath("/downloads/hud.zip", {});
+  });
+  act(() => hook.result.current.fcmModalProps.onAbort());
+  expect(commands.fcmDiscard).toHaveBeenCalledWith("preview-token");
 });
 
 it("asks for a provider and HUDModLoader inside the normal import flow when missing", async () => {

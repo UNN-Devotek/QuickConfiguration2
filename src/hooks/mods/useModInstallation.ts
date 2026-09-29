@@ -7,7 +7,11 @@ import {
 } from "@/commands/bindings";
 import { AnyError, commandErrorToString } from "@/commands/errors";
 import Mods from "@/commands/mods";
-import { createBaseManagedMod, modsEventBus } from "@/services/mods";
+import {
+  createBaseManagedMod,
+  getFcmManagedOwner,
+  modsEventBus,
+} from "@/services/mods";
 import { updateModsStore, useModsStore } from "@/stores/mods";
 import { useProfilesStore } from "@/stores/profiles";
 import { useToastsStore } from "@/stores/toasts";
@@ -52,6 +56,9 @@ export function useModInstallation() {
 
   const inspectFcmImport = async (paths: string[]) => {
     if (!(await commands.fcmDetectImport(paths))) return false;
+    const owner = getFcmManagedOwner(useModsStore.getState().getManagedMods());
+    if (owner)
+      throw new Error(t("fcmImport.managedOwner", { mod: owner.title }));
     const profile = useProfilesStore.getState().getSelectedProfile();
     if (!profile) throw new Error(t("errors.profileNotSet"));
     const target: FcmImportProfile = {
@@ -62,8 +69,9 @@ export function useModInstallation() {
     };
     modsEventBus.emitProgressUpdated(t("fcmImport.inspecting"));
     await resourceListStoreSync.flushSave();
-    if (!isFcmImportProfileActive(target))
+    if (!isFcmImportProfileActive(target)) {
       throw new Error(t("fcmImport.profileChanged"));
+    }
     const probe = await commands.fcmProbePrerequisites(
       profile.installationPath,
     );
@@ -84,8 +92,10 @@ export function useModInstallation() {
       null,
       null,
     );
-    if (!isFcmImportProfileActive(target))
+    if (!isFcmImportProfileActive(target)) {
+      await commands.fcmDiscard(preview.token);
       throw new Error(t("fcmImport.profileChanged"));
+    }
     modsEventBus.emitProgressFinished();
     setFcmPreview({ preview, profile: target });
     return true;
@@ -334,7 +344,11 @@ export function useModInstallation() {
     fcmModalProps: {
       preview: fcmPreview?.preview ?? null,
       profile: fcmPreview?.profile ?? null,
-      onAbort: () => setFcmPreview(null),
+      onAbort: () => {
+        if (fcmPreview)
+          commands.fcmDiscard(fcmPreview.preview.token).catch(console.error);
+        setFcmPreview(null);
+      },
       onApplied: () => setFcmPreview(null),
     },
     fcmPrerequisiteProps: {

@@ -228,10 +228,38 @@ fn provider(game: &Path) -> Result<String> {
 }
 
 fn read_optional(path: &Path) -> Result<Option<Vec<u8>>> {
+    ensure!(
+        !path.is_symlink() || path.exists(),
+        "{} is a broken symbolic link",
+        path.display()
+    );
     if path.exists() {
         Ok(Some(fs::read(path)?))
     } else {
         Ok(None)
+    }
+}
+
+fn is_linked(path: &Path) -> Result<bool> {
+    if path.is_symlink() {
+        return Ok(true);
+    }
+    if !path.exists() {
+        return Ok(false);
+    }
+    let metadata = fs::metadata(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Ok(metadata.nlink() > 1)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        Ok(metadata
+            .number_of_links()
+            .context("Cannot inspect file links")?
+            > 1)
     }
 }
 
@@ -241,6 +269,14 @@ fn add_change(
     after: Option<Vec<u8>>,
     description: &str,
 ) -> Result<()> {
+    ensure!(
+        !is_linked(&path)?
+            || path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("ini")),
+        "{} is linked to another file; remove its managed mod through the normal mod list first",
+        path.display()
+    );
     let before = read_optional(&path)?;
     if before != after {
         changes.push(FileChange {
@@ -615,6 +651,13 @@ pub fn fcm_preview_remove(
     Ok(preview)
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn fcm_discard(token: String, state: State<'_, FcmPlans>) -> CommandResult<()> {
+    state.0.lock()?.remove(&token);
+    Ok(())
+}
+
 #[derive(Serialize)]
 struct BackupEntry {
     original: String,
@@ -622,6 +665,16 @@ struct BackupEntry {
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+    if is_linked(path)? {
+        ensure!(
+            path.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("ini")),
+            "{} is linked to another file",
+            path.display()
+        );
+        fs::write(path, bytes)?;
+        return Ok(());
+    }
     fs::create_dir_all(path.parent().context("File has no parent")?)?;
     let mut temp = tempfile::NamedTempFile::new_in(path.parent().context("File has no parent")?)?;
     temp.write_all(bytes)?;
@@ -636,6 +689,15 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 fn apply_plan(plan: Plan, backup_root: &Path) -> Result<String> {
     ensure!(!game_running(), "Close Fallout 76 before changing mods");
     for change in &plan.changes {
+        ensure!(
+            !is_linked(&change.path)?
+                || change
+                    .path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("ini")),
+            "{} is linked to another file; preview again",
+            change.path.display()
+        );
         ensure!(
             read_optional(&change.path)? == change.before,
             "{} changed after preview; preview again",
@@ -673,12 +735,14 @@ fn apply_plan(plan: Plan, backup_root: &Path) -> Result<String> {
         };
         if let Err(error) = result {
             let mut restore_errors = Vec::new();
-            for old in applied.into_iter().rev() {
+            for old in applied.into_iter().chain(std::iter::once(change)).rev() {
                 let old: &FileChange = old;
                 let restored = if let Some(before) = &old.before {
                     atomic_write(&old.path, before)
-                } else {
+                } else if old.path.exists() {
                     fs::remove_file(&old.path).map_err(Into::into)
+                } else {
+                    Ok(())
                 };
                 if let Err(restore_error) = restored {
                     restore_errors.push(format!("{}: {restore_error}", old.path.display()));
@@ -796,6 +860,54 @@ mod tests {
         atomic_write(&path, b"after")?;
         assert_eq!(fs::read_to_string(&path)?, "after");
         assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o644);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_ini_is_updated_without_replacing_its_link() -> Result<()> {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source.ini");
+        let hardlink = dir.path().join("hudmodloader.ini");
+        let symlink = dir.path().join("Fallout76Custom.ini");
+        fs::write(&source, "before")?;
+        fs::hard_link(&source, &hardlink)?;
+        std::os::unix::fs::symlink(&source, &symlink)?;
+        atomic_write(&hardlink, b"after")?;
+        atomic_write(&symlink, b"final")?;
+        assert_eq!(fs::metadata(&source)?.ino(), fs::metadata(&hardlink)?.ino());
+        assert!(symlink.is_symlink());
+        assert_eq!(fs::read(source)?, b"final");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linked_ba2_is_rejected_before_removal() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let game = dir.path().join("game");
+        let ini = dir.path().join("ini");
+        fs::create_dir_all(game.join("Data"))?;
+        fs::create_dir_all(&ini)?;
+        fs::write(game.join("Fallout76.exe"), b"")?;
+        fs::write(ini.join("Fallout76Custom.ini"), b"[Archive]\n")?;
+        let source = dir.path().join("managed.ba2");
+        fs::write(&source, b"BTDX")?;
+        fs::hard_link(&source, game.join("Data/FCMChatWidget.ba2"))?;
+        assert!(
+            make_plan(
+                &game,
+                &ini,
+                "Fallout76",
+                FcmAction::Remove,
+                None,
+                Vec::new()
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(source)?, b"BTDX");
         Ok(())
     }
 
