@@ -8,7 +8,7 @@ import Entry from "@/components/common/Entry";
 import { FlexCol, FlexRow } from "@/components/common/Flex";
 import useModinfos from "@/hooks/nexusmods/useModinfos";
 import { useDragAndDrop } from "@/hooks/useDragAndDrop";
-import { FCM_MOD_KEY, getFcmManagedOwner, modsEventBus } from "@/services/mods";
+import { FCM_MOD_KEY, modsEventBus } from "@/services/mods";
 import { useModsStore } from "@/stores/mods";
 import { useProfilesStore } from "@/stores/profiles";
 import { useSettingsStore } from "@/stores/settings";
@@ -181,7 +181,11 @@ function ModTableRow(props: {
 export default function ModTable() {
   const { t } = useTranslation();
   const gamePath = useProfilesStore((store) => store.getGamePath());
+  const modsPath = useProfilesStore((store) => store.getModsPath());
   const [fcmInstall, setFcmInstall] = useState<string | null>(null);
+  const [managedOwner, setManagedOwner] = useState<
+    ManagedMod | null | undefined
+  >(undefined);
 
   useEffect(() => {
     let active = true;
@@ -213,6 +217,25 @@ export default function ModTable() {
 
   const mods = useModsStore((store) => store.mods);
   const deployedState = useModsStore((store) => store.state);
+  useEffect(() => {
+    let active = true;
+    setManagedOwner(undefined);
+    if (modsPath) {
+      commands
+        .fcmManagedOwner(modsPath, {
+          enabled: true,
+          mods,
+          state: deployedState,
+        })
+        .then((owner) => {
+          if (active) setManagedOwner(owner);
+        })
+        .catch(console.error);
+    }
+    return () => {
+      active = false;
+    };
+  }, [modsPath, mods, deployedState]);
   const getModState = useModsStore((store) => store.getModState);
   const setMods = useModsStore((store) => store.setMods);
   const enableMod = useModsStore((store) => store.enableMod);
@@ -360,7 +383,7 @@ export default function ModTable() {
           ))}
         </tbody>
         {fcmInstall &&
-          !getFcmManagedOwner({ enabled: true, mods, state: deployedState }) &&
+          managedOwner === null &&
           `${t("fcmImport.modTitle")} ${fcmInstall}`
             .toLocaleLowerCase()
             .includes(filter.toLocaleLowerCase()) && (

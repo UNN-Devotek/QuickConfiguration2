@@ -13,6 +13,8 @@ use uuid::Uuid;
 
 use super::errors::CommandResult;
 use super::ini::ini_update;
+use crate::features::mods::models::json::{ManagedMod, ManagedMods};
+use crate::utils::fs_util;
 
 mod import;
 
@@ -175,41 +177,58 @@ fn hex_digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn game_running() -> bool {
+fn game_running() -> Result<bool> {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(entries) = fs::read_dir("/proc") {
-            for entry in entries.flatten() {
-                if !entry
-                    .file_name()
-                    .to_string_lossy()
-                    .chars()
-                    .all(|c| c.is_ascii_digit())
-                {
-                    continue;
-                }
-                let cmd = fs::read(entry.path().join("cmdline")).unwrap_or_default();
-                if cmdline_contains_game(&cmd) {
-                    return true;
-                }
-            }
-        }
+        game_running_in_proc(Path::new("/proc"))
     }
     #[cfg(target_os = "windows")]
     {
-        if let Ok(output) = std::process::Command::new("tasklist")
+        let output = std::process::Command::new("tasklist")
             .args(["/FI", "IMAGENAME eq Fallout76.exe", "/FO", "CSV", "/NH"])
             .output()
+            .context("Cannot check whether Fallout 76 is running")?;
+        ensure!(
+            output.status.success(),
+            "Cannot check whether Fallout 76 is running: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .to_ascii_lowercase()
+            .contains("\"fallout76.exe\""))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        bail!("Cannot check whether Fallout 76 is running on this platform")
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn game_running_in_proc(proc_dir: &Path) -> Result<bool> {
+    for entry in fs::read_dir(proc_dir).context("Cannot inspect running processes")? {
+        let entry = entry?;
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .chars()
+            .all(|c| c.is_ascii_digit())
         {
-            if String::from_utf8_lossy(&output.stdout)
-                .to_ascii_lowercase()
-                .contains("\"fallout76.exe\"")
-            {
-                return true;
+            continue;
+        }
+        match fs::read(entry.path().join("cmdline")) {
+            Ok(cmd) if cmdline_contains_game(&cmd) => return Ok(true),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => {
+                let comm = fs::read_to_string(entry.path().join("comm"))
+                    .context("Cannot identify a running process")?;
+                if comm.trim().eq_ignore_ascii_case("Fallout76.exe") {
+                    return Ok(true);
+                }
             }
         }
     }
-    false
+    Ok(false)
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -349,6 +368,37 @@ fn ini_value(input: &str, section: &str, key: &str) -> Result<Option<String>> {
     Ok(found)
 }
 
+fn merge_missing_ini_keys(existing: &str, package: &str) -> Result<String> {
+    let mut merged = existing.to_owned();
+    let mut section = None;
+    let mut seen = std::collections::HashSet::new();
+    for line in package.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            section = Some(&line[1..line.len() - 1]);
+            continue;
+        }
+        let section = section.context("FCM package INI has an unsectioned setting")?;
+        let (key, value) = line
+            .split_once('=')
+            .context("Invalid FCM package INI setting")?;
+        let key = key.trim();
+        ensure!(!key.is_empty(), "Invalid FCM package INI setting");
+        ensure!(
+            seen.insert((section.to_ascii_lowercase(), key.to_ascii_lowercase())),
+            "Duplicate FCM package INI setting"
+        );
+        if ini_value(&merged, section, key)?.is_none() {
+            let value = value.split_once(';').map_or(value, |(value, _)| value);
+            merged = ini_update(&merged, section, key, Some(value.trim()))?;
+        }
+    }
+    Ok(merged)
+}
+
 fn archive_text(input: &str, action: FcmAction) -> Result<String> {
     let current = ini_value(input, "Archive", "sResourceArchive2List")?.unwrap_or_default();
     if action == FcmAction::Remove
@@ -427,6 +477,68 @@ fn current_install(game: &Path) -> Result<Option<String>> {
     })
 }
 
+fn is_fcm_mod_path(path: &Path) -> bool {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let mut parts = Vec::new();
+    for component in Path::new(&normalized).components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::Normal(part) => {
+                parts.push(part.to_string_lossy().to_ascii_lowercase())
+            }
+            std::path::Component::ParentDir if !parts.is_empty() => {
+                parts.pop();
+            }
+            _ => return false,
+        }
+    }
+    parts.len() == 2
+        && parts[0] == "data"
+        && (parts[1] == "fcmchatwidget.ba2" || parts[1] == "fcmserverbridge.ba2")
+}
+
+fn managed_owner(managed: &ManagedMods, mods_path: &Path) -> Result<Option<ManagedMod>> {
+    for installation in &managed.state {
+        if installation
+            .files
+            .iter()
+            .any(|file| is_fcm_mod_path(&Path::new(&installation.root_folder).join(file)))
+            && let Some(owner) = managed.get_mod(&installation.key)
+        {
+            return Ok(Some(owner.clone()));
+        }
+    }
+    for owner in &managed.mods {
+        ensure!(
+            Path::new(&owner.folder_name).components().count() == 1
+                && Path::new(&owner.folder_name)
+                    .components()
+                    .all(|part| matches!(part, std::path::Component::Normal(_))),
+            "Invalid managed mod folder"
+        );
+        let folder = mods_path.join(&owner.folder_name);
+        if !folder.exists() {
+            continue;
+        }
+        for file in fs_util::list_files_recursively(&folder, 2)? {
+            let relative = file.strip_prefix(&folder)?;
+            if is_fcm_mod_path(&Path::new(&owner.options.root_folder).join(relative)) {
+                return Ok(Some(owner.clone()));
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn fcm_managed_owner(
+    mods_path: String,
+    managed: ManagedMods,
+) -> CommandResult<Option<ManagedMod>> {
+    Ok(managed_owner(&managed, Path::new(&mods_path))?)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn fcm_current_install(game_path: String) -> CommandResult<Option<String>> {
@@ -465,7 +577,7 @@ fn make_plan_with_prerequisites(
     prerequisites: Vec<(PathBuf, Vec<u8>)>,
     loader_default: Option<String>,
 ) -> Result<(Plan, FcmPreview)> {
-    ensure!(!game_running(), "Close Fallout 76 before changing mods");
+    ensure!(!game_running()?, "Close Fallout 76 before changing mods");
     ensure!(
         prefix == "Fallout76" || prefix == "Project76",
         "Unsupported INI prefix"
@@ -592,6 +704,20 @@ fn make_plan_with_prerequisites(
                     "Merge xScal chat settings",
                 )?;
             }
+        } else if (relative == Path::new("Data/FCMChat.ini")
+            || relative == Path::new("Data/ZFE/TextChat/fragments/FCMChatWidget.ini"))
+            && game.join(&relative).exists()
+        {
+            let path = game.join(&relative);
+            let before = fs::read_to_string(&path)?;
+            let package = String::from_utf8(bytes)?;
+            let merged = merge_missing_ini_keys(&before, &package)?;
+            add_change(
+                &mut changes,
+                path,
+                Some(merged.into_bytes()),
+                "Merge new FCM settings",
+            )?;
         } else {
             let path = game.join(&relative);
             if relative
@@ -694,7 +820,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 fn apply_plan(plan: Plan, backup_root: &Path) -> Result<String> {
-    ensure!(!game_running(), "Close Fallout 76 before changing mods");
+    ensure!(!game_running()?, "Close Fallout 76 before changing mods");
     for change in &plan.changes {
         ensure!(
             !is_linked(&change.path)?
@@ -769,18 +895,25 @@ fn apply_plan(plan: Plan, backup_root: &Path) -> Result<String> {
     Ok(backup.display().to_string())
 }
 
+fn apply_stored_plan(state: &FcmPlans, token: &str, backup_root: &Path) -> Result<String> {
+    let mut plans = state
+        .0
+        .lock()
+        .map_err(|_| anyhow::anyhow!("FCM plan lock is unavailable"))?;
+    let plan = plans
+        .remove(token)
+        .context("Preview expired; preview again")?;
+    apply_plan(plan, backup_root)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn fcm_apply(token: String, state: State<'_, FcmPlans>) -> CommandResult<String> {
-    let plan = state
-        .0
-        .lock()?
-        .remove(&token)
-        .context("Preview expired; preview again")?;
     let backup_root = crate::utils::paths::get_config_path()
         .context("Cannot find app configuration directory")?
         .join("fcm-backups");
-    let result = apply_plan(plan, &backup_root).map_err(super::errors::CommandError::from);
+    let result =
+        apply_stored_plan(&state, &token, &backup_root).map_err(super::errors::CommandError::from);
     if let Err(ref error) = result {
         log::error!("FCM install: {error}");
     }
@@ -798,6 +931,149 @@ mod tests {
         ));
         assert!(cmdline_contains_game(b"/games/Fallout76.exe\0"));
         assert!(!cmdline_contains_game(b"/games/Other.exe\0"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn game_detection_fails_closed_when_processes_cannot_be_inspected() -> Result<()> {
+        let fixture = tempfile::tempdir()?;
+        assert!(game_running_in_proc(&fixture.path().join("missing")).is_err());
+        let process = fixture.path().join("123");
+        fs::create_dir(&process)?;
+        fs::create_dir(process.join("cmdline"))?;
+        fs::write(process.join("comm"), "Fallout76.exe\n")?;
+        assert!(game_running_in_proc(fixture.path())?);
+        fs::remove_file(process.join("comm"))?;
+        assert!(game_running_in_proc(fixture.path()).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn staged_managed_mod_owns_fcm_archive_before_deployment() -> Result<()> {
+        assert!(is_fcm_mod_path(Path::new("Data\\FCMServerBridge.ba2")));
+        let fixture = tempfile::tempdir()?;
+        let mod_folder = fixture.path().join("managed-fcm");
+        fs::create_dir(&mod_folder)?;
+        fs::write(mod_folder.join("FCMChatWidget.ba2"), b"BTDX")?;
+        let owner = ManagedMod {
+            key: "staged".to_owned(),
+            title: "Staged HUD".to_owned(),
+            folder_name: "managed-fcm".to_owned(),
+            options: crate::features::mods::models::json::ModInstallationOptions {
+                root_folder: "Data".to_owned(),
+            },
+            ..Default::default()
+        };
+        let managed = ManagedMods {
+            mods: vec![owner],
+            ..Default::default()
+        };
+        assert_eq!(
+            managed_owner(&managed, fixture.path())?.map(|mod_| mod_.key),
+            Some("staged".to_owned())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn zfe_fragment_update_adds_only_missing_settings() -> Result<()> {
+        let existing = "; custom note\r\n[TextChat]\r\nOpenChatKey=DELETE\r\n";
+        let package = "[TextChat]\nOpenChatKey=INSERT\nAllowedChannels=global,server\n[BrowserLinks.Sites]\nhttps://fallout.wiki=allow\n";
+        let merged = merge_missing_ini_keys(existing, package)?;
+        assert!(merged.starts_with("; custom note\r\n"));
+        assert!(merged.contains("OpenChatKey=DELETE\r\n"));
+        assert!(merged.contains("AllowedChannels=global,server\r\n"));
+        assert!(merged.contains("https://fallout.wiki=allow\r\n"));
+        assert_eq!(merge_missing_ini_keys(&merged, package)?, merged);
+        Ok(())
+    }
+
+    #[test]
+    fn hud_plan_merges_existing_zfe_fragment_without_replacing_user_values() -> Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let game = fixture.path().join("game");
+        let ini = fixture.path().join("ini");
+        let fragment = game.join("Data/ZFE/TextChat/fragments/FCMChatWidget.ini");
+        fs::create_dir_all(fragment.parent().context("Fragment has no parent")?)?;
+        fs::create_dir_all(&ini)?;
+        fs::write(game.join("Fallout76.exe"), b"")?;
+        fs::write(game.join("dxgi.dll"), b"zfe-chat-v1")?;
+        fs::write(game.join("Data/HUDModLoader.ba2"), b"BTDX")?;
+        fs::write(game.join("Data/hudmodloader.ini"), b"OtherChild\n")?;
+        fs::write(
+            game.join("Data/FCMChat.ini"),
+            b"[FCMChat]\nopenKey=DELETE\n",
+        )?;
+        fs::write(&fragment, b"; user note\n[TextChat]\nOpenChatKey=DELETE\n")?;
+        fs::write(
+            ini.join("Fallout76Custom.ini"),
+            b"[Archive]\nsResourceArchive2List=Other.ba2\n",
+        )?;
+        let (plan, _) = make_plan(
+            &game,
+            &ini,
+            "Fallout76",
+            FcmAction::InstallHud,
+            None,
+            vec![
+                (PathBuf::from("Data/FCMChatWidget.ba2"), b"BTDX new".to_vec()),
+                (PathBuf::from("Data/FCMChat.ini"), b"[FCMChat]\nopenKey=INSERT\nnewSetting=enabled\n".to_vec()),
+                (PathBuf::from("Data/ZFE/TextChat/fragments/FCMChatWidget.ini"), b"[TextChat]\nOpenChatKey=INSERT\nAllowedChannels=global,server\n[BrowserLinks.Sites]\nhttps://fallout.wiki=allow\n".to_vec()),
+            ],
+        )?;
+        apply_plan(plan, fixture.path())?;
+        let merged = fs::read_to_string(&fragment)?;
+        assert!(merged.contains("; user note\n"));
+        assert!(merged.contains("OpenChatKey=DELETE\n"));
+        assert!(merged.contains("AllowedChannels=global,server\n"));
+        assert!(merged.contains("https://fallout.wiki=allow\n"));
+        let chat = fs::read_to_string(game.join("Data/FCMChat.ini"))?;
+        assert!(chat.contains("openKey=DELETE\n"));
+        assert!(chat.contains("newSetting=enabled\n"));
+        Ok(())
+    }
+
+    #[test]
+    fn concurrent_previews_cannot_both_replace_the_same_file() -> Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let path = fixture.path().join("FCMChat.ini");
+        fs::write(&path, b"before")?;
+        let plans = std::sync::Arc::new(FcmPlans::default());
+        for token in ["first", "second"] {
+            plans
+                .0
+                .lock()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?
+                .insert(
+                    token.to_owned(),
+                    Plan {
+                        changes: vec![FileChange {
+                            path: path.clone(),
+                            before: Some(b"before".to_vec()),
+                            after: Some(token.as_bytes().to_vec()),
+                            description: "replace".to_owned(),
+                        }],
+                    },
+                );
+        }
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let mut workers = Vec::new();
+        for token in ["first", "second"] {
+            let plans = std::sync::Arc::clone(&plans);
+            let barrier = std::sync::Arc::clone(&barrier);
+            let backup = fixture.path().to_path_buf();
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                apply_stored_plan(&plans, token, &backup).is_ok()
+            }));
+        }
+        barrier.wait();
+        let successes = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap_or(false) as usize)
+            .sum::<usize>();
+        assert_eq!(successes, 1);
+        Ok(())
     }
 
     #[test]

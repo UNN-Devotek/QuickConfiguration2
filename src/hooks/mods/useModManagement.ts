@@ -4,7 +4,6 @@ import Mods from "@/commands/mods";
 import {
   FCM_MOD_KEY,
   createBaseManagedMod,
-  getFcmManagedOwner,
   modsEventBus,
 } from "@/services/mods";
 import { updateModsStore, useModsStore } from "@/stores/mods";
@@ -33,7 +32,10 @@ function useModDeletionModal() {
     try {
       const profile = useProfilesStore.getState().getSelectedProfile();
       if (!profile) throw new Error(t("errors.profileNotSet"));
-      const owner = getFcmManagedOwner(
+      const modsPath = useProfilesStore.getState().getModsPath();
+      if (!modsPath) throw new Error(t("mods.errors.unsetModsPath"));
+      const owner = await commands.fcmManagedOwner(
+        modsPath,
         useModsStore.getState().getManagedMods(),
       );
       if (owner)
@@ -98,15 +100,13 @@ function useModDeletionModal() {
           await commands.iniLoad(fcmRemoval.iniPath, fcmRemoval.iniPrefix);
           await resourceListStoreSync.load();
         } catch (error) {
-          useToastsStore
-            .getState()
-            .addToast(
-              t("fcmImport.title"),
-              t("fcmImport.refreshFailed", {
-                error: commandErrorToString(error as AnyError),
-              }),
-              "warning",
-            );
+          useToastsStore.getState().addToast(
+            t("fcmImport.title"),
+            t("fcmImport.refreshFailed", {
+              error: commandErrorToString(error as AnyError),
+            }),
+            "warning",
+          );
         }
         return;
       }

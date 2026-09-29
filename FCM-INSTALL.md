@@ -36,8 +36,9 @@ The installer backs up every changed file under the app configuration directory'
 `fcm-backups/` folder and displays that backup path when complete. It merges
 `Data/hudmodloader.ini` and the active `Fallout76Custom.ini` archive list without
 replacing unrelated entries and preserves permissions on updated files. A
-visible HUD install creates `Data/FCMChat.ini` or
-the ZFE fragment only if absent, preserving edited copies. On xScal it merges
+visible HUD install creates `Data/FCMChat.ini` and the ZFE fragment if absent.
+In existing copies, it adds new packaged keys while preserving existing values
+and comments. On xScal it merges
 only `[Chat] enabled` and `relayEndpoint` from the supplied package example.
 If HUDModLoader later ships an FCM entry by default, the installer recognizes
 existing FCM lines, removes duplicates, and leaves one line for the chosen mode.
@@ -52,11 +53,14 @@ needed. A changed file between preview and apply blocks the operation.
 An import preview is bound to the selected profile and its game and INI paths;
 switching profiles requires starting the import again. Linux game detection
 recognizes both Unix and Proton's Windows-style path separators.
-Canceled previews are discarded. If a deployed mod already owns an FCM BA2,
+Canceled previews are discarded. If a staged or deployed mod already owns an FCM BA2,
 remove it through that mod's normal row before using the guided installer;
 the guided row is hidden while the managed mod owns it. The installer also
 refuses linked BA2 files so it cannot alter another mod's source archive.
 Existing linked INI files are updated through their links and remain linked.
+Apply operations are serialized, and process detection must succeed before
+any preview or write. A normal INI save prepares all changes before writing;
+if a later write fails, it restores earlier files or reports any restoration failure.
 
 Quick Configuration's normal INI save now checks whether any file changed on
 disk since it was loaded. If so, it refuses to overwrite the newer file and

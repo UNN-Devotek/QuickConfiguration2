@@ -30,7 +30,7 @@ fn snapshot(paths: Vec<PathBuf>) -> Result<Vec<SavedFile>> {
 
 fn restore(saved: &[SavedFile]) -> Result<()> {
     ensure!(
-        !game_running(),
+        !game_running()?,
         "Fallout 76 started; restore the saved files after closing it"
     );
     for file in saved {
@@ -330,7 +330,7 @@ fn headless_production_linux_install() -> Result<()> {
         "Production ZIP is missing"
     );
     ensure!(
-        !game_running(),
+        !game_running()?,
         "Close Fallout 76 before the acceptance test"
     );
     let fixture = tempfile::tempdir()?;

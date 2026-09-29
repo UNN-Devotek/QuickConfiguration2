@@ -88,6 +88,9 @@ async fcmPreviewRemove(gamePath: string, iniPath: string, iniPrefix: string) : P
 async fcmCurrentInstall(gamePath: string) : Promise<string | null> {
     return await TAURI_INVOKE("fcm_current_install", { gamePath });
 },
+async fcmManagedOwner(modsPath: string, managed: ManagedMods) : Promise<ManagedMod | null> {
+    return await TAURI_INVOKE("fcm_managed_owner", { modsPath, managed });
+},
 async fcmDetectImport(paths: string[]) : Promise<boolean> {
     return await TAURI_INVOKE("fcm_detect_import", { paths });
 },

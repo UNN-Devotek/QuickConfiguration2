@@ -19,6 +19,7 @@ const managed = vi.hoisted(() => ({
 vi.mock("@/commands/bindings", () => ({
   commands: {
     fcmDetectImport: vi.fn(),
+    fcmManagedOwner: vi.fn(),
     fcmProbePrerequisites: vi.fn(),
     fcmPreviewImport: vi.fn(),
     fcmDiscard: vi.fn(),
@@ -74,6 +75,7 @@ beforeEach(() => {
     selected: "profile",
   });
   vi.mocked(commands.fcmDetectImport).mockResolvedValue(true);
+  vi.mocked(commands.fcmManagedOwner).mockResolvedValue(null);
   vi.mocked(commands.fcmProbePrerequisites).mockResolvedValue({
     provider: "zfe",
     hudModLoader: true,
@@ -129,6 +131,7 @@ it.each([
   async (rootFolder, file) => {
     managed.mods = [{ key: "managed-fcm", title: "Managed FCM" } as ManagedMod];
     managed.state = [{ key: "managed-fcm", rootFolder, files: [file] }];
+    vi.mocked(commands.fcmManagedOwner).mockResolvedValue(managed.mods[0]);
     const hook = renderHook(() => useModInstallation());
     await act(async () => {
       await hook.result.current.installFromFileWithPath(
@@ -141,6 +144,17 @@ it.each([
     expect(hook.result.current.fcmModalProps.preview).toBeNull();
   },
 );
+
+it("blocks guided import when a staged managed FCM mod owns the archive", async () => {
+  managed.mods = [{ key: "staged-fcm", title: "Staged FCM" } as ManagedMod];
+  vi.mocked(commands.fcmManagedOwner).mockResolvedValue(managed.mods[0]);
+  const hook = renderHook(() => useModInstallation());
+  await act(async () => {
+    await hook.result.current.installFromFileWithPath("/downloads/hud.zip", {});
+  });
+  expect(commands.fcmManagedOwner).toHaveBeenCalledWith("/mods", managed);
+  expect(commands.fcmPreviewImport).not.toHaveBeenCalled();
+});
 
 it("discards a canceled preview", async () => {
   const hook = renderHook(() => useModInstallation());

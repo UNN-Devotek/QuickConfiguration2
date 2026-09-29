@@ -163,6 +163,77 @@ fn update_global_key(input: &str, key: &str, value: Option<&str>) -> CommandResu
     ))
 }
 
+struct IniSaveChange {
+    path: std::path::PathBuf,
+    before: Option<Vec<u8>>,
+    after: Vec<u8>,
+}
+
+fn write_ini_change(change: &IniSaveChange) -> CommandResult<()> {
+    if change.before.is_some() {
+        fs::write(&change.path, &change.after)?;
+    } else {
+        let mut temp = tempfile::NamedTempFile::new_in(change.path.parent().ok_or_else(|| {
+            CommandError::String {
+                message: format!("{} has no parent directory", change.path.display()),
+            }
+        })?)?;
+        use std::io::Write;
+        temp.write_all(&change.after)?;
+        temp.persist(&change.path).map_err(|error| error.error)?;
+    }
+    Ok(())
+}
+
+fn restore_ini_changes(changes: &[IniSaveChange], error: CommandError) -> CommandError {
+    let mut failures = Vec::new();
+    for change in changes.iter().rev() {
+        let result = if let Some(before) = &change.before {
+            fs::write(&change.path, before)
+        } else if change.path.exists() {
+            fs::remove_file(&change.path)
+        } else {
+            Ok(())
+        };
+        if let Err(reason) = result {
+            failures.push(format!("{}: {reason}", change.path.display()));
+        }
+    }
+    let message = if failures.is_empty() {
+        format!("INI save failed; previous files were restored: {error}")
+    } else {
+        format!(
+            "INI save failed; restoration incomplete: {}; original error: {error}",
+            failures.join("; ")
+        )
+    };
+    CommandError::String { message }
+}
+
+fn commit_ini_changes(changes: &[IniSaveChange]) -> CommandResult<()> {
+    for (index, change) in changes.iter().enumerate() {
+        let current = match read_snapshot(&change.path) {
+            Ok(current) => current,
+            Err(error) => return Err(restore_ini_changes(&changes[..index], error)),
+        };
+        if current != change.before {
+            return Err(restore_ini_changes(
+                &changes[..index],
+                CommandError::String {
+                    message: format!(
+                        "{} changed during save; reload INI files",
+                        change.path.display()
+                    ),
+                },
+            ));
+        }
+        if let Err(error) = write_ini_change(change) {
+            return Err(restore_ini_changes(&changes[..=index], error));
+        }
+    }
+    Ok(())
+}
+
 #[duplicate_item(
     ini_get_TYPE        VALUE     RETURN_TYPE;
     [ini_get_string]    [string]  [String];
@@ -401,35 +472,26 @@ pub fn _ini_save(
         }
     }
 
+    let mut changes = Vec::new();
     for (path, desired) in [
         (&main_path, &*main_lock),
         (&prefs_path, &*prefs_lock),
         (&custom_path, &*custom_lock),
     ] {
-        let baseline = snapshots
-            .get(path)
-            .and_then(Option::as_deref)
-            .unwrap_or_default();
-        let merged = merge_changed_keys(baseline, desired)?;
-        if merged != baseline {
-            if snapshots.get(path).and_then(Option::as_ref).is_some() {
-                fs::write(path, &merged)?;
-            } else {
-                let mut temp =
-                    tempfile::NamedTempFile::new_in(path.parent().ok_or_else(|| {
-                        CommandError::String {
-                            message: format!("{} has no parent directory", path.display()),
-                        }
-                    })?)?;
-                use std::io::Write;
-                temp.write_all(&merged)?;
-                temp.persist(path).map_err(|error| error.error)?;
-            }
+        let before = snapshots.get(path).cloned().unwrap_or(None);
+        let baseline = before.as_deref().unwrap_or_default();
+        let after = merge_changed_keys(baseline, desired)?;
+        if after != baseline {
+            changes.push(IniSaveChange {
+                path: path.to_path_buf(),
+                before,
+                after,
+            });
         }
     }
-
-    for path in [&main_path, &prefs_path, &custom_path] {
-        snapshots.insert(path.clone(), read_snapshot(path)?);
+    commit_ini_changes(&changes)?;
+    for change in changes {
+        snapshots.insert(change.path, Some(change.after));
     }
 
     Ok(())
@@ -460,6 +522,59 @@ mod external_edit_tests {
         let dir = tempfile::tempdir()?;
         assert_eq!(read_snapshot(&dir.path().join("missing.ini"))?, None);
         assert!(read_snapshot(dir.path()).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn failed_later_ini_write_restores_earlier_file() -> anyhow::Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let first = fixture.path().join("Fallout76.ini");
+        fs::write(&first, b"before")?;
+        let blocking_file = fixture.path().join("not-a-directory");
+        fs::write(&blocking_file, b"block")?;
+        let changes = [
+            IniSaveChange {
+                path: first.clone(),
+                before: Some(b"before".to_vec()),
+                after: b"after".to_vec(),
+            },
+            IniSaveChange {
+                path: blocking_file.join("Fallout76Prefs.ini"),
+                before: None,
+                after: b"new".to_vec(),
+            },
+        ];
+        assert!(commit_ini_changes(&changes).is_err());
+        assert_eq!(fs::read(&first)?, b"before");
+        Ok(())
+    }
+
+    #[test]
+    fn later_merge_error_cannot_partially_save_an_earlier_ini() -> anyhow::Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let main_path = fixture.path().join("Fallout76.ini");
+        let prefs_path = fixture.path().join("Fallout76Prefs.ini");
+        let custom_path = fixture.path().join("Fallout76Custom.ini");
+        let original = b"[Display]\nfoo=1\n";
+        fs::write(&main_path, original)?;
+        fs::write(&prefs_path, b"\xff")?;
+        fs::write(&custom_path, b"[Archive]\nkeep=yes\n")?;
+        let mut changed_main = Ini::load_from_str("[Display]\nfoo=2\n")?;
+        changed_main.set_to(Some("Display"), "foo".to_owned(), "2".to_owned());
+        let mut snapshots = HashMap::new();
+        for path in [&main_path, &prefs_path, &custom_path] {
+            snapshots.insert(path.to_path_buf(), read_snapshot(path)?);
+        }
+        let result = _ini_save(
+            fixture.path().display().to_string(),
+            "Fallout76".to_owned(),
+            Arc::new(Mutex::new(changed_main)),
+            Arc::new(Mutex::new(Ini::new())),
+            Arc::new(Mutex::new(Ini::new())),
+            Arc::new(Mutex::new(snapshots)),
+        );
+        assert!(result.is_err());
+        assert_eq!(fs::read(main_path)?, original);
         Ok(())
     }
 

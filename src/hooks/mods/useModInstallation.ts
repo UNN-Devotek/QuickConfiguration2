@@ -7,11 +7,7 @@ import {
 } from "@/commands/bindings";
 import { AnyError, commandErrorToString } from "@/commands/errors";
 import Mods from "@/commands/mods";
-import {
-  createBaseManagedMod,
-  getFcmManagedOwner,
-  modsEventBus,
-} from "@/services/mods";
+import { createBaseManagedMod, modsEventBus } from "@/services/mods";
 import { updateModsStore, useModsStore } from "@/stores/mods";
 import { useProfilesStore } from "@/stores/profiles";
 import { useToastsStore } from "@/stores/toasts";
@@ -56,7 +52,12 @@ export function useModInstallation() {
 
   const inspectFcmImport = async (paths: string[]) => {
     if (!(await commands.fcmDetectImport(paths))) return false;
-    const owner = getFcmManagedOwner(useModsStore.getState().getManagedMods());
+    const modsPath = useProfilesStore.getState().getModsPath();
+    if (!modsPath) throw new Error(t("mods.errors.unsetModsPath"));
+    const owner = await commands.fcmManagedOwner(
+      modsPath,
+      useModsStore.getState().getManagedMods(),
+    );
     if (owner)
       throw new Error(t("fcmImport.managedOwner", { mod: owner.title }));
     const profile = useProfilesStore.getState().getSelectedProfile();

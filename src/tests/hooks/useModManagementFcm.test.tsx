@@ -11,6 +11,7 @@ import { vi } from "vitest";
 vi.mock("@/commands/bindings", () => ({
   commands: {
     fcmPreviewRemove: vi.fn(),
+    fcmManagedOwner: vi.fn(),
     fcmApply: vi.fn(),
     fcmDiscard: vi.fn(),
     iniLoad: vi.fn(),
