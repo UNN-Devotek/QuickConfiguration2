@@ -247,19 +247,26 @@ fn is_linked(path: &Path) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
     }
-    let metadata = fs::metadata(path)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
+        let metadata = fs::metadata(path)?;
         Ok(metadata.nlink() > 1)
     }
     #[cfg(windows)]
     {
-        use std::os::windows::fs::MetadataExt;
-        Ok(metadata
-            .number_of_links()
-            .context("Cannot inspect file links")?
-            > 1)
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+
+        let file = fs::File::open(path)?;
+        let mut info = BY_HANDLE_FILE_INFORMATION::default();
+        unsafe {
+            GetFileInformationByHandle(HANDLE(file.as_raw_handle() as isize), &mut info)?;
+        }
+        Ok(info.nNumberOfLinks > 1)
     }
 }
 
@@ -883,7 +890,7 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn linked_ba2_is_rejected_before_removal() -> Result<()> {
         let dir = tempfile::tempdir()?;
