@@ -120,19 +120,27 @@ it("routes an FCM ZIP through safe preview before ordinary mod staging", async (
   );
 });
 
-it("keeps FCM packages owned by the normal mod manager on that path", async () => {
-  managed.mods = [{ key: "managed-fcm", title: "Managed FCM" } as ManagedMod];
-  managed.state = [
-    { key: "managed-fcm", rootFolder: "Data", files: ["FCMChatWidget.ba2"] },
-  ];
-  const hook = renderHook(() => useModInstallation());
-  await act(async () => {
-    await hook.result.current.installFromFileWithPath("/downloads/hud.zip", {});
-  });
-  expect(commands.fcmProbePrerequisites).not.toHaveBeenCalled();
-  expect(commands.fcmPreviewImport).not.toHaveBeenCalled();
-  expect(hook.result.current.fcmModalProps.preview).toBeNull();
-});
+it.each([
+  ["Data", "FCMChatWidget.ba2"],
+  [".", "Data\\FCMServerBridge.ba2"],
+  ["Data/sub/..", "FCMChatWidget.ba2"],
+])(
+  "keeps a managed FCM archive at %s/%s on the normal path",
+  async (rootFolder, file) => {
+    managed.mods = [{ key: "managed-fcm", title: "Managed FCM" } as ManagedMod];
+    managed.state = [{ key: "managed-fcm", rootFolder, files: [file] }];
+    const hook = renderHook(() => useModInstallation());
+    await act(async () => {
+      await hook.result.current.installFromFileWithPath(
+        "/downloads/hud.zip",
+        {},
+      );
+    });
+    expect(commands.fcmProbePrerequisites).not.toHaveBeenCalled();
+    expect(commands.fcmPreviewImport).not.toHaveBeenCalled();
+    expect(hook.result.current.fcmModalProps.preview).toBeNull();
+  },
+);
 
 it("discards a canceled preview", async () => {
   const hook = renderHook(() => useModInstallation());

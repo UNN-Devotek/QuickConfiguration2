@@ -9,13 +9,18 @@ export function getFcmManagedOwner(
   managed: ManagedMods,
 ): ManagedMod | undefined {
   const owner = managed.state.find((entry) =>
-    entry.files.some((file) =>
-      /(?:^|\/)data\/(?:fcmchatwidget|fcmserverbridge)\.ba2$/i.test(
-        `${entry.rootFolder}/${file}`
-          .replaceAll("\\", "/")
-          .replace(/(^|\/)\.\//g, "$1"),
-      ),
-    ),
+    entry.files.some((file) => {
+      const parts: string[] = [];
+      for (const part of `${entry.rootFolder}/${file}`
+        .replaceAll("\\", "/")
+        .split("/")) {
+        if (part === "..") parts.pop();
+        else if (part && part !== ".") parts.push(part);
+      }
+      return /(?:^|\/)data\/(?:fcmchatwidget|fcmserverbridge)\.ba2$/i.test(
+        parts.join("/"),
+      );
+    }),
   );
   return managed.mods.find((mod) => mod.key === owner?.key);
 }
