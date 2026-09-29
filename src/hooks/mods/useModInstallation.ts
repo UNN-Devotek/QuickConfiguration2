@@ -21,6 +21,10 @@ import {
   isFcmPrerequisiteModalShownAtom,
   isModInstallationDetailsModalShownAtom,
 } from "@/views/mods/tabs/modOrder/modals";
+import {
+  type FcmImportProfile,
+  isFcmImportProfileActive,
+} from "@/views/mods/tabs/modOrder/modals/modInstallation/fcmProfile";
 
 const fileContentsAtom = atom<DirEntry[]>([]);
 const modAtom = atom<ManagedMod>(createBaseManagedMod());
@@ -33,10 +37,14 @@ export function useModInstallation() {
   );
   const [fileContents, setFileContents] = useAtom(fileContentsAtom);
   const [mod, setMod] = useAtom(modAtom);
-  const [fcmPreview, setFcmPreview] = useState<FcmPreview | null>(null);
+  const [fcmPreview, setFcmPreview] = useState<{
+    preview: FcmPreview;
+    profile: FcmImportProfile;
+  } | null>(null);
   const [fcmPrerequisites, setFcmPrerequisites] = useState<{
     paths: string[];
     probe: FcmPrerequisites;
+    profile: FcmImportProfile;
   } | null>(null);
   const [, setFcmPrerequisiteModalShown] = useAtom(
     isFcmPrerequisiteModalShownAtom,
@@ -46,14 +54,24 @@ export function useModInstallation() {
     if (!(await commands.fcmDetectImport(paths))) return false;
     const profile = useProfilesStore.getState().getSelectedProfile();
     if (!profile) throw new Error(t("errors.profileNotSet"));
+    const target: FcmImportProfile = {
+      key: profile.key,
+      installationPath: profile.installationPath,
+      iniPath: profile.iniPath,
+      iniPrefix: profile.iniPrefix,
+    };
     modsEventBus.emitProgressUpdated(t("fcmImport.inspecting"));
     await resourceListStoreSync.flushSave();
+    if (!isFcmImportProfileActive(target))
+      throw new Error(t("fcmImport.profileChanged"));
     const probe = await commands.fcmProbePrerequisites(
       profile.installationPath,
     );
     if (!probe.provider || !probe.hudModLoader) {
+      if (!isFcmImportProfileActive(target))
+        throw new Error(t("fcmImport.profileChanged"));
       modsEventBus.emitProgressFinished();
-      setFcmPrerequisites({ paths, probe });
+      setFcmPrerequisites({ paths, probe, profile: target });
       setFcmPrerequisiteModalShown(true);
       return true;
     }
@@ -66,8 +84,10 @@ export function useModInstallation() {
       null,
       null,
     );
+    if (!isFcmImportProfileActive(target))
+      throw new Error(t("fcmImport.profileChanged"));
     modsEventBus.emitProgressFinished();
-    setFcmPreview(preview);
+    setFcmPreview({ preview, profile: target });
     return true;
   };
 
@@ -312,7 +332,8 @@ export function useModInstallation() {
     installFromFolder,
     installMod,
     fcmModalProps: {
-      preview: fcmPreview,
+      preview: fcmPreview?.preview ?? null,
+      profile: fcmPreview?.profile ?? null,
       onAbort: () => setFcmPreview(null),
       onApplied: () => setFcmPreview(null),
     },
@@ -322,10 +343,10 @@ export function useModInstallation() {
         setFcmPrerequisites(null);
         setFcmPrerequisiteModalShown(false);
       },
-      onPreview: (preview: FcmPreview) => {
+      onPreview: (preview: FcmPreview, profile: FcmImportProfile) => {
         setFcmPrerequisites(null);
         setFcmPrerequisiteModalShown(false);
-        setFcmPreview(preview);
+        setFcmPreview({ preview, profile });
       },
     },
     modalProps: {

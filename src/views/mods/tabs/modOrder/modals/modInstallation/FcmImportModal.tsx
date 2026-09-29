@@ -2,34 +2,42 @@ import { commands, type FcmPreview } from "@/commands/bindings";
 import { commandErrorToString, type AnyError } from "@/commands/errors";
 import { modsEventBus } from "@/services/mods";
 import { resourceListStoreSync } from "@/stores/resourceList";
-import { useProfilesStore } from "@/stores/profiles";
 import { useToastsStore } from "@/stores/toasts";
 import { useState } from "react";
 import { Alert, Button, ListGroup, Modal, Spinner } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
+import { type FcmImportProfile, isFcmImportProfileActive } from "./fcmProfile";
 
 interface Props {
   preview: FcmPreview | null;
+  profile: FcmImportProfile | null;
   onAbort: () => void;
   onApplied: () => void;
 }
 
-export default function FcmImportModal({ preview, onAbort, onApplied }: Props) {
+export default function FcmImportModal({
+  preview,
+  profile,
+  onAbort,
+  onApplied,
+}: Props) {
   const { t } = useTranslation();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
   const apply = async () => {
-    if (!preview) return;
-    const profile = useProfilesStore.getState().getSelectedProfile();
-    if (!profile) return;
+    if (!preview || !profile) return;
     setPending(true);
     setError("");
-    resourceListStoreSync.cancelSave();
     try {
+      if (!isFcmImportProfileActive(profile))
+        throw new Error(t("fcmImport.profileChanged"));
+      resourceListStoreSync.cancelSave();
       const backup = await commands.fcmApply(preview.token);
-      await commands.iniLoad(profile.iniPath, profile.iniPrefix);
-      await resourceListStoreSync.load();
+      if (isFcmImportProfileActive(profile)) {
+        await commands.iniLoad(profile.iniPath, profile.iniPrefix);
+        await resourceListStoreSync.load();
+      }
       modsEventBus.emitFcmChanged();
       useToastsStore
         .getState()

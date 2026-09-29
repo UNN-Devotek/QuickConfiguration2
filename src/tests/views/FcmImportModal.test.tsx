@@ -41,6 +41,13 @@ const preview: FcmPreview = {
   ],
 };
 
+const profile = {
+  key: "profile",
+  installationPath: "/game",
+  iniPath: "/ini",
+  iniPrefix: "Fallout76",
+};
+
 beforeEach(() => {
   useProfilesStore.getState().setStore({
     profiles: [
@@ -72,6 +79,7 @@ it("applies an imported bridge after review and reloads INI state", async () => 
   render(
     <FcmImportModal
       preview={preview}
+      profile={profile}
       onAbort={vi.fn()}
       onApplied={onApplied}
     />,
@@ -87,4 +95,21 @@ it("applies an imported bridge after review and reloads INI state", async () => 
   expect(resourceListStoreSync.load).toHaveBeenCalled();
   expect(onApplied).toHaveBeenCalled();
   expect(useToastsStore.getState().toasts.at(-1)?.variant).toBe("success");
+});
+
+it("refuses to apply a preview after the selected profile changes", async () => {
+  render(
+    <FcmImportModal
+      preview={preview}
+      profile={profile}
+      onAbort={vi.fn()}
+      onApplied={vi.fn()}
+    />,
+  );
+  useProfilesStore.getState().setStore({ selected: "other-profile" });
+  fireEvent.click(screen.getByRole("button", { name: "fcmImport.apply" }));
+  await waitFor(() =>
+    expect(screen.getByText("fcmImport.profileChanged")).toBeInTheDocument(),
+  );
+  expect(commands.fcmApply).not.toHaveBeenCalled();
 });

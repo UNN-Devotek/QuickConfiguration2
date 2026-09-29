@@ -41,6 +41,9 @@ jobs:
       - run: pnpm ui:vitest
       - run: pnpm cargo:check
       - run: pnpm cargo:test
+      - name: Validate current production FCM packages with the importer
+        if: runner.os == 'Linux'
+        run: python3 scripts/check-published-fcm-packages.py
       - name: Check Linux AppImage launcher
         if: runner.os == 'Linux'
         run: sh -n scripts/launch-appimage-linux.sh

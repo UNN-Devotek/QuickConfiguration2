@@ -189,11 +189,7 @@ fn game_running() -> bool {
                     continue;
                 }
                 let cmd = fs::read(entry.path().join("cmdline")).unwrap_or_default();
-                if cmd.split(|byte| *byte == 0).any(|part| {
-                    part.rsplit(|byte| *byte == b'/')
-                        .next()
-                        .is_some_and(|name| name.eq_ignore_ascii_case(b"Fallout76.exe"))
-                }) {
+                if cmdline_contains_game(&cmd) {
                     return true;
                 }
             }
@@ -214,6 +210,15 @@ fn game_running() -> bool {
         }
     }
     false
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn cmdline_contains_game(cmdline: &[u8]) -> bool {
+    cmdline.split(|byte| *byte == 0).any(|part| {
+        part.rsplit(|byte| *byte == b'/' || *byte == b'\\')
+            .next()
+            .is_some_and(|name| name.eq_ignore_ascii_case(b"Fallout76.exe"))
+    })
 }
 
 fn provider(game: &Path) -> Result<String> {
@@ -667,15 +672,26 @@ fn apply_plan(plan: Plan, backup_root: &Path) -> Result<String> {
             Ok(())
         };
         if let Err(error) = result {
+            let mut restore_errors = Vec::new();
             for old in applied.into_iter().rev() {
                 let old: &FileChange = old;
-                if let Some(before) = &old.before {
-                    let _ = atomic_write(&old.path, before);
+                let restored = if let Some(before) = &old.before {
+                    atomic_write(&old.path, before)
                 } else {
-                    let _ = fs::remove_file(&old.path);
+                    fs::remove_file(&old.path).map_err(Into::into)
+                };
+                if let Err(restore_error) = restored {
+                    restore_errors.push(format!("{}: {restore_error}", old.path.display()));
                 }
             }
-            return Err(error.context("FCM install failed; previous files were restored"));
+            if restore_errors.is_empty() {
+                return Err(error.context("FCM install failed; previous files were restored"));
+            }
+            return Err(error.context(format!(
+                "FCM install failed; rollback incomplete: {}; backup: {}",
+                restore_errors.join("; "),
+                backup.display()
+            )));
         }
         applied.push(change);
     }
@@ -703,6 +719,54 @@ pub fn fcm_apply(token: String, state: State<'_, FcmPlans>) -> CommandResult<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linux_game_detection_accepts_proton_path_separators() {
+        assert!(cmdline_contains_game(
+            b"Z:\\steamapps\\Fallout76.exe\0--foo\0"
+        ));
+        assert!(cmdline_contains_game(b"/games/Fallout76.exe\0"));
+        assert!(!cmdline_contains_game(b"/games/Other.exe\0"));
+    }
+
+    #[test]
+    fn failed_rollback_reports_backup_and_restore_error() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let original = dir.path().join("original.ini");
+        fs::write(&original, b"before")?;
+        let blocker = dir.path().join("blocker");
+        fs::write(&blocker, b"not a directory")?;
+        let plan = Plan {
+            changes: vec![
+                FileChange {
+                    path: original.clone(),
+                    before: Some(b"before".to_vec()),
+                    after: None,
+                    description: "remove".to_owned(),
+                },
+                FileChange {
+                    path: original.join("child"),
+                    before: None,
+                    after: Some(b"child".to_vec()),
+                    description: "create nested file".to_owned(),
+                },
+                FileChange {
+                    path: blocker.join("child"),
+                    before: None,
+                    after: Some(b"fail".to_vec()),
+                    description: "fail".to_owned(),
+                },
+            ],
+        };
+        let error = match apply_plan(plan, dir.path()) {
+            Ok(_) => bail!("The planned write should fail"),
+            Err(error) => format!("{error:#}"),
+        };
+        assert!(error.contains("rollback incomplete"));
+        assert!(error.contains("backup:"));
+        assert!(error.contains(&original.display().to_string()));
+        Ok(())
+    }
 
     #[test]
     fn current_install_finds_loader_entries_and_orphan_ba2() -> Result<()> {

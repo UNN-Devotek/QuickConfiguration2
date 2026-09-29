@@ -45,6 +45,13 @@ const preview: FcmPreview = {
   changes: [],
 };
 
+const profile = {
+  key: "profile",
+  installationPath: "/game",
+  iniPath: "/ini",
+  iniPrefix: "Fallout76",
+};
+
 beforeEach(() => {
   useProfilesStore.getState().setStore({
     profiles: [
@@ -109,6 +116,7 @@ it("downloads the selected provider and HUDModLoader before one combined preview
       request={{
         paths: ["/downloads/hud.zip"],
         probe: { provider: null, hudModLoader: false },
+        profile,
       }}
       onAbort={vi.fn()}
       onPreview={onPreview}
@@ -118,7 +126,7 @@ it("downloads the selected provider and HUDModLoader before one combined preview
   fireEvent.click(
     screen.getByRole("button", { name: "fcmImport.downloadPrerequisites" }),
   );
-  await waitFor(() => expect(onPreview).toHaveBeenCalledWith(preview));
+  await waitFor(() => expect(onPreview).toHaveBeenCalledWith(preview, profile));
   expect(NexusMods.api.listModFiles).toHaveBeenNthCalledWith(
     1,
     "test-key",
@@ -174,6 +182,7 @@ it("uses the official Mod Manager Download link when direct download is unavaila
       request={{
         paths: ["/downloads/hud.zip"],
         probe: { provider: null, hudModLoader: true },
+        profile,
       }}
       onAbort={vi.fn()}
       onPreview={onPreview}
@@ -196,4 +205,26 @@ it("uses the official Mod Manager Download link when direct download is unavaila
     "/downloads/provider.zip",
     null,
   );
+});
+
+it("does not download prerequisites for a different selected profile", async () => {
+  render(
+    <FcmPrerequisiteModal
+      request={{
+        paths: ["/downloads/hud.zip"],
+        probe: { provider: null, hudModLoader: false },
+        profile,
+      }}
+      onAbort={vi.fn()}
+      onPreview={vi.fn()}
+    />,
+  );
+  useProfilesStore.getState().setStore({ selected: "other-profile" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "fcmImport.downloadPrerequisites" }),
+  );
+  await waitFor(() =>
+    expect(screen.getByText("fcmImport.profileChanged")).toBeInTheDocument(),
+  );
+  expect(NexusMods.api.listModFiles).not.toHaveBeenCalled();
 });

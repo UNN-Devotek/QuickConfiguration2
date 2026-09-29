@@ -41,10 +41,17 @@ the ZFE fragment only if absent, preserving edited copies. On xScal it merges
 only `[Chat] enabled` and `relayEndpoint` from the supplied package example.
 If HUDModLoader later ships an FCM entry by default, the installer recognizes
 existing FCM lines, removes duplicates, and leaves one line for the chosen mode.
+If a write fails and restoration also fails, the error reports the paths that
+could not be restored and the backup directory for manual recovery. Duplicate
+`[Archive]` sections block a targeted INI write so the archive entry cannot be
+placed in a different section than the game uses.
 The bridge never changes provider chat settings. Removal clears the FCM BA2 and
 its loader/archive entries; it keeps editable FCM configuration files so user
 customizations are not lost. Restore a backup manually if an earlier setup is
 needed. A changed file between preview and apply blocks the operation.
+An import preview is bound to the selected profile and its game and INI paths;
+switching profiles requires starting the import again. Linux game detection
+recognizes both Unix and Proton's Windows-style path separators.
 
 Quick Configuration's normal INI save now checks whether any file changed on
 disk since it was loaded. If so, it refuses to overwrite the newer file and
@@ -103,3 +110,12 @@ bytes even if a validation check fails; the separate copy covers an interrupted
 process or failed restoration. Each apply also writes its normal backup
 manifest under `FCM_BACKUP_DIR`. Check the live files against the separate copy
 afterward. This test does not exercise the graphical file picker or native chat.
+
+## Published package compatibility in CI
+
+The Linux CI job runs `python3 scripts/check-published-fcm-packages.py`. It reads
+the latest production release and latest published HUD from `/api/releases`,
+downloads the Linux overlay ZIP and HUD ZIP, and runs the Rust importer against
+both provider folders and the embedded Server Bridge. The check fails if the
+feed, download, package layout, HUD version, or bridge checksum is invalid.
+It checks package compatibility without installing files into a game profile.

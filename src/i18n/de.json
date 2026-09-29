@@ -9,7 +9,7 @@
     "hud": "Sichtbares HUD",
     "bridge": "Server Bridge",
     "previewExpired": "Die Vorschau zum Entfernen des FCM-Mods ist abgelaufen. Wähle erneut Löschen.",
-    "profileChanged": "Das ausgewählte Spielprofil hat sich geändert. Wähle erneut Löschen.",
+    "profileChanged": "Das ausgewählte Spielprofil hat sich geändert. Starte die FCM-Aktion erneut.",
     "packageVersion": "Paketversion {{version}} aus {{source}}",
     "review": "Dateiänderungen prüfen",
     "detected": "Provider: {{provider}}. Aktueller FCM-Mod: {{installed}}.",

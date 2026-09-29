@@ -118,9 +118,41 @@ it("asks for a provider and HUDModLoader inside the normal import flow when miss
   expect(hook.result.current.fcmPrerequisiteProps.request).toEqual({
     paths: ["/downloads/hud.zip"],
     probe: { provider: null, hudModLoader: false },
+    profile: {
+      key: "profile",
+      installationPath: "/game",
+      iniPath: "/ini",
+      iniPrefix: "Fallout76",
+    },
   });
   expect(commands.fcmPreviewImport).not.toHaveBeenCalled();
   expect(
     Mods.actions.tempFolder.createFromFileOrArchive,
   ).not.toHaveBeenCalled();
+});
+
+it("discards an import preview when the profile changes during inspection", async () => {
+  let resolveProbe: (value: {
+    provider: string;
+    hudModLoader: boolean;
+  }) => void = () => undefined;
+  vi.mocked(commands.fcmProbePrerequisites).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveProbe = resolve;
+      }),
+  );
+  const hook = renderHook(() => useModInstallation());
+  await act(async () => {
+    const installation = hook.result.current.installFromFileWithPath(
+      "/downloads/hud.zip",
+      {},
+    );
+    await Promise.resolve();
+    useProfilesStore.getState().setStore({ selected: "other-profile" });
+    resolveProbe({ provider: "zfe", hudModLoader: true });
+    await installation;
+  });
+  expect(commands.fcmPreviewImport).not.toHaveBeenCalled();
+  expect(hook.result.current.fcmModalProps.preview).toBeNull();
 });

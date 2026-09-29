@@ -36,17 +36,10 @@ pub(crate) fn ini_update(
         .map(|line| line.trim_end_matches('\r').to_owned())
         .collect();
     let mut section_start = None;
-    let mut section_end = lines.len();
     for (index, line) in lines.iter().enumerate() {
         if line.trim().eq_ignore_ascii_case(&format!("[{section}]")) {
             anyhow::ensure!(section_start.is_none(), "Duplicate [{section}] section");
             section_start = Some(index);
-        } else if section_start.is_some()
-            && line.trim().starts_with('[')
-            && line.trim().ends_with(']')
-        {
-            section_end = index;
-            break;
         }
     }
     let Some(start) = section_start else {
@@ -63,6 +56,12 @@ pub(crate) fn ini_update(
             if lines.is_empty() { "" } else { newline }
         ));
     };
+    let section_end = ((start + 1)..lines.len())
+        .find(|index| {
+            let line = lines[*index].trim();
+            line.starts_with('[') && line.ends_with(']')
+        })
+        .unwrap_or(lines.len());
     let matches: Vec<usize> = ((start + 1)..section_end)
         .filter(|index| {
             lines[*index]
@@ -439,6 +438,21 @@ pub fn _ini_save(
 mod external_edit_tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn targeted_write_rejects_duplicate_archive_sections() -> anyhow::Result<()> {
+        let input = "[Archive]\nkeep=yes\n[Other]\nkeep=still\n[archive]\nsResourceArchive2List=Other.ba2\n";
+        assert!(
+            ini_update(
+                input,
+                "Archive",
+                "sResourceArchive2List",
+                Some("FCMChatWidget.ba2")
+            )
+            .is_err()
+        );
+        Ok(())
+    }
 
     #[test]
     fn snapshot_distinguishes_missing_file_from_read_error() -> anyhow::Result<()> {

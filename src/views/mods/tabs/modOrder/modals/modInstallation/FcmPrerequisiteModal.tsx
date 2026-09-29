@@ -11,17 +11,21 @@ import {
   nexusmodsStoreAccountSync,
   useNexusModsStore,
 } from "@/stores/nexusmods";
-import { useProfilesStore } from "@/stores/profiles";
 import { useSettingsStore } from "@/stores/settings";
 import { open } from "@tauri-apps/plugin-shell";
 import { useRef, useState } from "react";
 import { Alert, Button, Form, Modal, Spinner } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
+import { type FcmImportProfile, isFcmImportProfileActive } from "./fcmProfile";
 
 interface Props {
-  request: { paths: string[]; probe: FcmPrerequisites } | null;
+  request: {
+    paths: string[];
+    probe: FcmPrerequisites;
+    profile: FcmImportProfile;
+  } | null;
   onAbort: () => void;
-  onPreview: (preview: FcmPreview) => void;
+  onPreview: (preview: FcmPreview, profile: FcmImportProfile) => void;
 }
 
 const PROVIDER_MOD_IDS = { zfe: 4065, xscal: 4183 } as const;
@@ -163,12 +167,12 @@ export default function FcmPrerequisiteModal({
     setPending(true);
     setError("");
     try {
+      if (!isFcmImportProfileActive(request.profile))
+        throw new Error(t("fcmImport.profileChanged"));
       if (!useNexusModsStore.getState().apiKey)
         await nexusmodsStoreAccountSync.load();
       const apiKey = useNexusModsStore.getState().apiKey;
       if (!apiKey) throw new Error(t("fcmImport.nexusLogin"));
-      const profile = useProfilesStore.getState().getSelectedProfile();
-      if (!profile) throw new Error(t("errors.profileNotSet"));
       const provider = (request.probe.provider || choice) as "zfe" | "xscal";
       const providerZip = request.probe.provider
         ? null
@@ -177,17 +181,23 @@ export default function FcmPrerequisiteModal({
         ? null
         : await download(apiKey, LOADER_MOD_ID, active.signal);
       if (active.signal.aborted) return;
+      if (!isFcmImportProfileActive(request.profile))
+        throw new Error(t("fcmImport.profileChanged"));
       setStatus(t("fcmImport.inspecting"));
       const preview = await commands.fcmPreviewImport(
-        profile.installationPath,
-        profile.iniPath,
-        profile.iniPrefix,
+        request.profile.installationPath,
+        request.profile.iniPath,
+        request.profile.iniPrefix,
         request.paths,
         provider,
         providerZip,
         loaderZip,
       );
-      if (!active.signal.aborted) onPreview(preview);
+      if (!active.signal.aborted) {
+        if (!isFcmImportProfileActive(request.profile))
+          throw new Error(t("fcmImport.profileChanged"));
+        onPreview(preview, request.profile);
+      }
     } catch (reason) {
       const wasCanceled = active.signal.aborted;
       active.abort();

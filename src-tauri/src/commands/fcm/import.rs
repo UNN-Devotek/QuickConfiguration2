@@ -217,9 +217,10 @@ fn import_bridge(
     );
     let ba2 = source.read(&ba2_name, 2 * 1024 * 1024)?;
     ensure!(ba2.starts_with(b"BTDX"), "Invalid bridge BA2");
-    if let Some(expected) = metadata["ba2Sha256"].as_str() {
-        ensure!(hex_digest(&ba2) == expected, "Bridge BA2 checksum mismatch");
-    }
+    let expected = metadata["ba2Sha256"]
+        .as_str()
+        .context("Bridge BA2 checksum is missing")?;
+    ensure!(hex_digest(&ba2) == expected, "Bridge BA2 checksum mismatch");
     let info = local_package_info(version.to_owned());
     let files = vec![(PathBuf::from("Data/FCMServerBridge.ba2"), ba2)];
     Ok(ImportedPackage {
@@ -572,7 +573,7 @@ pub(super) fn preview_import(
     let mut packages = Vec::new();
     for source in source_paths(paths)? {
         let label = source.label();
-        for mut package in inspect_source(&source, &selected_provider, false)? {
+        for mut package in inspect_source(&source, selected_provider, false)? {
             package.info.source = format!("Local package: {label}");
             packages.push(package);
         }
@@ -628,6 +629,41 @@ mod tests {
     use super::*;
     use crate::commands::fcm::hex_digest;
 
+    #[test]
+    #[ignore = "requires FCM_HUD_ZIP, FCM_LINUX_ZIP, and FCM_HUD_VERSION from the published release"]
+    fn validates_current_published_packages() -> Result<()> {
+        let hud = ImportSource::ZipFile(PathBuf::from(std::env::var("FCM_HUD_ZIP")?));
+        let linux = ImportSource::ZipFile(PathBuf::from(std::env::var("FCM_LINUX_ZIP")?));
+        let expected_hud_version = std::env::var("FCM_HUD_VERSION")?;
+        for provider in ["zfe", "xscal"] {
+            ensure!(
+                contains_marker(&hud, false)?,
+                "Published HUD marker is missing"
+            );
+            let packages = inspect_source(&hud, provider, false)?;
+            ensure!(packages.len() == 1, "Expected one {provider} HUD package");
+            ensure!(
+                packages[0].action == FcmAction::InstallHud,
+                "Wrong HUD action"
+            );
+            ensure!(
+                packages[0].info.version == expected_hud_version,
+                "HUD package version disagrees with the release feed"
+            );
+        }
+        ensure!(
+            contains_marker(&linux, false)?,
+            "Published bridge marker is missing"
+        );
+        let packages = inspect_source(&linux, "zfe", false)?;
+        ensure!(packages.len() == 1, "Expected one bridge in the Linux ZIP");
+        ensure!(
+            packages[0].action == FcmAction::InstallBridge,
+            "Wrong bridge action"
+        );
+        Ok(())
+    }
+
     fn bridge_entries(prefix: &str) -> Vec<(String, Vec<u8>)> {
         let ba2 = b"BTDX bridge contents".to_vec();
         let build = serde_json::json!({
@@ -642,6 +678,23 @@ mod tests {
             ),
             (format!("{prefix}Data/FCMServerBridge.ba2"), ba2),
         ]
+    }
+
+    #[test]
+    fn bridge_package_requires_its_ba2_checksum() -> Result<()> {
+        let mut entries = bridge_entries("");
+        entries[0].1 = serde_json::to_vec(&serde_json::json!({
+            "version": "0.2.8",
+            "target": "prod",
+        }))?;
+        let source = ImportSource::ZipBytes(package_zip(entries)?);
+        let names = source.names()?;
+        let error = match import_bridge(&source, &names, "BUILD.json") {
+            Ok(_) => anyhow::bail!("The bridge package should require a checksum"),
+            Err(error) => error,
+        };
+        ensure!(error.to_string().contains("checksum is missing"));
+        Ok(())
     }
 
     #[test]
