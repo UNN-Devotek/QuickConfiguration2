@@ -23,6 +23,12 @@ class NXMLinksQueueService {
     return this.queue.shift();
   }
 
+  /** Consume one link claimed by a guided installer without removing unrelated links. */
+  public consume(link: string) {
+    const index = this.queue.indexOf(link);
+    if (index >= 0) this.queue.splice(index, 1);
+  }
+
   /**
    * Subscribes to nxm:// links that are opened with the app.
    *

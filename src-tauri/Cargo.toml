@@ -1,6 +1,6 @@
 [package]
 name = "f76qc2"
-version = "2.0.0-beta.5"
+version = "2.0.0-beta.12"
 description = "Fallout 76 Quick Configuration"
 authors = ["FelisDiligens"]
 license = "MIT"
@@ -63,6 +63,8 @@ camino = { version = "1.2.2", features = ["serde1"] }
 url = "2.5.8"
 percent-encoding = "2.3.2"
 semver = "1.0.28"
+sha2 = "0.10"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
 normalize-path = "0.2.1"
 content_disposition = "0.4.0"
 

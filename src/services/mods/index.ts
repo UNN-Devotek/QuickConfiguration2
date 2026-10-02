@@ -3,6 +3,8 @@ import { ManagedMod } from "@/commands/bindings";
 export { ModsEventBus, modsEventBus } from "./eventBus";
 export type { Archive2Event, ProgressEvent, UIActionEvent } from "./eventBus";
 
+export const FCM_MOD_KEY = "fcm-installed";
+
 export function createBaseManagedMod(basename?: string): ManagedMod {
   return {
     key: crypto.randomUUID(),

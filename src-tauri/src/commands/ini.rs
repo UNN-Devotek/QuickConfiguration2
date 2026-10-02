@@ -17,6 +17,288 @@ use crate::utils::fs_util;
 use crate::utils::ini::IniAccessors;
 use crate::utils::paths::get_resources_path;
 
+fn read_snapshot(path: &Path) -> CommandResult<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub(crate) fn ini_update(
+    input: &str,
+    section: &str,
+    key: &str,
+    value: Option<&str>,
+) -> anyhow::Result<String> {
+    let newline = if input.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut lines: Vec<String> = input
+        .lines()
+        .map(|line| line.trim_end_matches('\r').to_owned())
+        .collect();
+    let mut section_start = None;
+    for (index, line) in lines.iter().enumerate() {
+        if line.trim().eq_ignore_ascii_case(&format!("[{section}]")) {
+            anyhow::ensure!(section_start.is_none(), "Duplicate [{section}] section");
+            section_start = Some(index);
+        }
+    }
+    let Some(start) = section_start else {
+        if let Some(value) = value {
+            if !lines.is_empty() && !lines.last().is_some_and(String::is_empty) {
+                lines.push(String::new());
+            }
+            lines.push(format!("[{section}]"));
+            lines.push(format!("{key}={value}"));
+        }
+        return Ok(format!(
+            "{}{}",
+            lines.join(newline),
+            if lines.is_empty() { "" } else { newline }
+        ));
+    };
+    let section_end = ((start + 1)..lines.len())
+        .find(|index| {
+            let line = lines[*index].trim();
+            line.starts_with('[') && line.ends_with(']')
+        })
+        .unwrap_or(lines.len());
+    let matches: Vec<usize> = ((start + 1)..section_end)
+        .filter(|index| {
+            lines[*index]
+                .split_once('=')
+                .is_some_and(|(candidate, _)| candidate.trim().eq_ignore_ascii_case(key))
+        })
+        .collect();
+    anyhow::ensure!(matches.len() <= 1, "Duplicate {key} key in [{section}]");
+    match (matches.first().copied(), value) {
+        (Some(index), Some(value)) => lines[index] = format!("{key}={value}"),
+        (Some(index), None) => {
+            lines.remove(index);
+        }
+        (None, Some(value)) => lines.insert(section_end, format!("{key}={value}")),
+        (None, None) => {}
+    }
+    Ok(format!(
+        "{}{}",
+        lines.join(newline),
+        if lines.is_empty() { "" } else { newline }
+    ))
+}
+
+fn merge_changed_keys(baseline: &[u8], desired: &Ini) -> CommandResult<Vec<u8>> {
+    let original = String::from_utf8(baseline.to_vec()).map_err(|error| CommandError::String {
+        message: format!("INI is not UTF-8: {error}"),
+    })?;
+    let previous = Ini::load_from_str(&original)?;
+    let mut merged = original.clone();
+    for (section, properties) in &previous {
+        let Some(section) = section else { continue };
+        for (key, value) in properties.iter() {
+            if desired.get_from(Some(section), key) != Some(value) {
+                merged = ini_update(&merged, section, key, desired.get_from(Some(section), key))
+                    .map_err(CommandError::from)?;
+            }
+        }
+    }
+    for (section, properties) in desired {
+        let Some(section) = section else { continue };
+        for (key, value) in properties.iter() {
+            if previous.get_from(Some(section), key).is_none() {
+                merged =
+                    ini_update(&merged, section, key, Some(value)).map_err(CommandError::from)?;
+            }
+        }
+    }
+    if let Some(properties) = previous.section(None::<&str>) {
+        for (key, value) in properties.iter() {
+            if desired.get_from(None::<&str>, key) != Some(value) {
+                merged = update_global_key(&merged, key, desired.get_from(None::<&str>, key))?;
+            }
+        }
+    }
+    if let Some(properties) = desired.section(None::<&str>) {
+        for (key, value) in properties.iter() {
+            if previous.get_from(None::<&str>, key).is_none() {
+                merged = update_global_key(&merged, key, Some(value))?;
+            }
+        }
+    }
+    Ok(merged.into_bytes())
+}
+
+fn update_global_key(input: &str, key: &str, value: Option<&str>) -> CommandResult<String> {
+    let newline = if input.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut lines: Vec<String> = input
+        .lines()
+        .map(|line| line.trim_end_matches('\r').to_owned())
+        .collect();
+    let first_section = lines
+        .iter()
+        .position(|line| line.trim().starts_with('[') && line.trim().ends_with(']'))
+        .unwrap_or(lines.len());
+    let matches: Vec<usize> = (0..first_section)
+        .filter(|index| {
+            lines[*index]
+                .split_once('=')
+                .is_some_and(|(candidate, _)| candidate.trim().eq_ignore_ascii_case(key))
+        })
+        .collect();
+    if matches.len() > 1 {
+        return Err(CommandError::String {
+            message: format!("Duplicate unsectioned {key} key"),
+        });
+    }
+    match (matches.first().copied(), value) {
+        (Some(index), Some(value)) => lines[index] = format!("{key}={value}"),
+        (Some(index), None) => {
+            lines.remove(index);
+        }
+        (None, Some(value)) => lines.insert(first_section, format!("{key}={value}")),
+        (None, None) => {}
+    }
+    Ok(format!(
+        "{}{}",
+        lines.join(newline),
+        if lines.is_empty() { "" } else { newline }
+    ))
+}
+
+struct IniSaveChange {
+    path: std::path::PathBuf,
+    before: Option<Vec<u8>>,
+    after: Vec<u8>,
+}
+
+fn write_ini_change(change: &IniSaveChange) -> CommandResult<()> {
+    if change.before.is_some() {
+        fs::write(&change.path, &change.after)?;
+    } else {
+        let mut temp = tempfile::NamedTempFile::new_in(change.path.parent().ok_or_else(|| {
+            CommandError::String {
+                message: format!("{} has no parent directory", change.path.display()),
+            }
+        })?)?;
+        use std::io::Write;
+        temp.write_all(&change.after)?;
+        temp.persist(&change.path).map_err(|error| error.error)?;
+    }
+    Ok(())
+}
+
+fn restore_ini_changes(changes: &[IniSaveChange], error: CommandError) -> CommandError {
+    let mut failures = Vec::new();
+    for change in changes.iter().rev() {
+        let result = if let Some(before) = &change.before {
+            fs::write(&change.path, before)
+        } else if change.path.exists() {
+            fs::remove_file(&change.path)
+        } else {
+            Ok(())
+        };
+        if let Err(reason) = result {
+            failures.push(format!("{}: {reason}", change.path.display()));
+        }
+    }
+    let message = if failures.is_empty() {
+        format!("INI save failed; previous files were restored: {error}")
+    } else {
+        format!(
+            "INI save failed; restoration incomplete: {}; original error: {error}",
+            failures.join("; ")
+        )
+    };
+    CommandError::String { message }
+}
+
+fn commit_ini_changes(changes: &[IniSaveChange]) -> CommandResult<()> {
+    for (index, change) in changes.iter().enumerate() {
+        let current = match read_snapshot(&change.path) {
+            Ok(current) => current,
+            Err(error) => return Err(restore_ini_changes(&changes[..index], error)),
+        };
+        if current != change.before {
+            return Err(restore_ini_changes(
+                &changes[..index],
+                CommandError::String {
+                    message: format!(
+                        "{} changed during save; reload INI files",
+                        change.path.display()
+                    ),
+                },
+            ));
+        }
+        if let Err(error) = write_ini_change(change) {
+            return Err(restore_ini_changes(&changes[..=index], error));
+        }
+    }
+    Ok(())
+}
+
+fn restore_readonly_permissions(
+    files: &[(std::path::PathBuf, fs::Permissions)],
+) -> CommandResult<()> {
+    let failures: Vec<String> = files
+        .iter()
+        .filter_map(|(path, permissions)| {
+            fs::set_permissions(path, permissions.clone())
+                .err()
+                .map(|error| format!("{}: {error}", path.display()))
+        })
+        .collect();
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(CommandError::String {
+            message: format!("Could not restore INI permissions: {}", failures.join("; ")),
+        })
+    }
+}
+
+fn commit_ini_changes_with_readonly(
+    changes: &[IniSaveChange],
+    bypass_readonly: bool,
+) -> CommandResult<()> {
+    let mut readonly = Vec::new();
+    for change in changes {
+        if change.before.is_none() {
+            continue;
+        }
+        let permissions = fs::metadata(&change.path)?.permissions();
+        if permissions.readonly() {
+            if !bypass_readonly {
+                return Err(CommandError::String {
+                    message: format!("{} is read-only", change.path.display()),
+                });
+            }
+            readonly.push((change.path.clone(), permissions));
+        }
+    }
+    for (path, permissions) in &readonly {
+        let mut writable = permissions.clone();
+        writable.set_readonly(false);
+        if let Err(error) = fs::set_permissions(path, writable) {
+            let restore = restore_readonly_permissions(&readonly);
+            return Err(CommandError::String {
+                message: format!(
+                    "Could not make {} writable: {error}; permission restoration: {restore:?}",
+                    path.display()
+                ),
+            });
+        }
+    }
+    let saved = commit_ini_changes(changes);
+    let restored = restore_readonly_permissions(&readonly);
+    match (saved, restored) {
+        (Err(error), Err(restore)) => Err(CommandError::String {
+            message: format!("{error}; {restore}"),
+        }),
+        (Err(error), _) => Err(error),
+        (_, Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
+}
+
 #[duplicate_item(
     ini_get_TYPE        VALUE     RETURN_TYPE;
     [ini_get_string]    [string]  [String];
@@ -97,7 +379,8 @@ pub async fn ini_load(
     let main = Arc::clone(&state.main);
     let prefs = Arc::clone(&state.prefs);
     let custom = Arc::clone(&state.custom);
-    spawn_blocking(move || _ini_load(ini_path, ini_prefix, main, prefs, custom))
+    let baselines = Arc::clone(&state.baselines);
+    spawn_blocking(move || _ini_load(ini_path, ini_prefix, main, prefs, custom, baselines))
         .await
         .tap_err(|e| log::error!("Couldn't join handle in ini_load: {e}"))
         .map_err(CommandError::from)
@@ -110,6 +393,7 @@ pub fn _ini_load(
     main: Arc<Mutex<Ini>>,
     prefs: Arc<Mutex<Ini>>,
     custom: Arc<Mutex<Ini>>,
+    baselines: Arc<Mutex<std::collections::HashMap<std::path::PathBuf, Option<Vec<u8>>>>>,
 ) -> CommandResult<()> {
     log::trace!(
         "Loading ini files from '{}' with prefix '{}'",
@@ -121,6 +405,11 @@ pub fn _ini_load(
     let main_path = Path::new(&ini_path).join(format!("{}.ini", ini_prefix));
     let prefs_path = Path::new(&ini_path).join(format!("{}Prefs.ini", ini_prefix));
     let custom_path = Path::new(&ini_path).join(format!("{}Custom.ini", ini_prefix));
+    let loaded_bytes = [
+        read_snapshot(&main_path)?,
+        read_snapshot(&prefs_path)?,
+        read_snapshot(&custom_path)?,
+    ];
 
     // Lock state mutexes:
     let mut main_lock = main
@@ -166,6 +455,19 @@ pub fn _ini_load(
             _ => Ok(Default::default()),
         })?;
 
+    let mut snapshots = baselines.lock()?;
+    for (path, expected) in [&main_path, &prefs_path, &custom_path]
+        .into_iter()
+        .zip(loaded_bytes)
+    {
+        if read_snapshot(path)? != expected {
+            return Err(CommandError::String {
+                message: format!("{} changed while loading; reload INI files", path.display()),
+            });
+        }
+        snapshots.insert(path.clone(), expected);
+    }
+
     Ok(())
 }
 
@@ -180,11 +482,22 @@ pub async fn ini_save(
     let main = Arc::clone(&state.main);
     let prefs = Arc::clone(&state.prefs);
     let custom = Arc::clone(&state.custom);
-    spawn_blocking(move || _ini_save(ini_path, ini_prefix, bypass_readonly, main, prefs, custom))
-        .await
-        .tap_err(|e| log::error!("Couldn't join handle in ini_save: {e}"))
-        .map_err(CommandError::from)
-        .flatten()
+    let baselines = Arc::clone(&state.baselines);
+    spawn_blocking(move || {
+        _ini_save(
+            ini_path,
+            ini_prefix,
+            bypass_readonly,
+            main,
+            prefs,
+            custom,
+            baselines,
+        )
+    })
+    .await
+    .tap_err(|e| log::error!("Couldn't join handle in ini_save: {e}"))
+    .map_err(CommandError::from)
+    .flatten()
 }
 
 pub fn _ini_save(
@@ -194,6 +507,7 @@ pub fn _ini_save(
     main: Arc<Mutex<Ini>>,
     prefs: Arc<Mutex<Ini>>,
     custom: Arc<Mutex<Ini>>,
+    baselines: Arc<Mutex<std::collections::HashMap<std::path::PathBuf, Option<Vec<u8>>>>>,
 ) -> CommandResult<()> {
     log::trace!(
         "Saving ini files to '{}' with prefix '{}'",
@@ -217,72 +531,425 @@ pub fn _ini_save(
         .lock()
         .tap_err(|err| log::error!("Couldn't lock mutex for {ini_prefix}Custom.ini: {err}"))?;
 
-    let options = ini::WriteOption {
-        line_separator: ini::LineSeparator::CRLF,
-        ..Default::default()
-    };
-
-    // Check if files are readonly, ignoring any read errors:
-    let main_readonly = fs_util::is_file_readonly(&main_path)
-        .tap_err(|err| log::warn!("Couldn't read readonly flag on {ini_prefix}.ini: {err}"))
-        .unwrap_or(false);
-    let prefs_readonly = fs_util::is_file_readonly(&prefs_path)
-        .tap_err(|err| log::warn!("Couldn't read readonly flag on {ini_prefix}Prefs.ini: {err}"))
-        .unwrap_or(false);
-    let custom_readonly = fs_util::is_file_readonly(&custom_path)
-        .tap_err(|err| log::warn!("Couldn't read readonly flag on {ini_prefix}Custom.ini: {err}"))
-        .unwrap_or(false);
-
-    // Unset read-only flag:
-    if bypass_readonly {
-        if main_readonly {
-            fs_util::set_file_readonly(&main_path, false).tap_err(|err| {
-                log::error!("Couldn't unset readonly flag on {ini_prefix}.ini: {err}")
-            })?;
-        }
-        if prefs_readonly {
-            fs_util::set_file_readonly(&prefs_path, false).tap_err(|err| {
-                log::error!("Couldn't unset readonly flag on {ini_prefix}Prefs.ini: {err}")
-            })?;
-        }
-        if custom_readonly {
-            fs_util::set_file_readonly(&custom_path, false).tap_err(|err| {
-                log::error!("Couldn't unset readonly flag on {ini_prefix}Custom.ini: {err}")
-            })?;
+    let mut snapshots = baselines.lock()?;
+    for path in [&main_path, &prefs_path, &custom_path] {
+        let expected = snapshots.get(path).ok_or_else(|| CommandError::String {
+            message: format!(
+                "{} was not loaded; reload INI files before saving",
+                path.display()
+            ),
+        })?;
+        if &read_snapshot(path)? != expected {
+            return Err(CommandError::String {
+                message: format!(
+                    "{} changed outside Quick Configuration; reload before saving",
+                    path.display()
+                ),
+            });
         }
     }
 
-    // Write state to files:
-    main_lock
-        .write_to_file_opt(&main_path, options.clone())
-        .tap_err(|err| log::error!("Couldn't write to {ini_prefix}.ini: {err}"))?;
-    prefs_lock
-        .write_to_file_opt(&prefs_path, options.clone())
-        .tap_err(|err| log::error!("Couldn't write to {ini_prefix}Prefs.ini: {err}"))?;
-    custom_lock
-        .write_to_file_opt(&custom_path, options.clone())
-        .tap_err(|err| log::error!("Couldn't write to {ini_prefix}Custom.ini: {err}"))?;
-
-    // Preserve read-only flag if it was set before saving:
-    if bypass_readonly {
-        if main_readonly {
-            fs_util::set_file_readonly(&main_path, true).tap_err(|err| {
-                log::error!("Couldn't set readonly flag on {ini_prefix}.ini: {err}")
-            })?;
+    let mut changes = Vec::new();
+    for (path, desired) in [
+        (&main_path, &*main_lock),
+        (&prefs_path, &*prefs_lock),
+        (&custom_path, &*custom_lock),
+    ] {
+        let before = snapshots.get(path).cloned().unwrap_or(None);
+        let baseline = before.as_deref().unwrap_or_default();
+        let after = merge_changed_keys(baseline, desired)?;
+        if after != baseline {
+            changes.push(IniSaveChange {
+                path: path.to_path_buf(),
+                before,
+                after,
+            });
         }
-        if prefs_readonly {
-            fs_util::set_file_readonly(&prefs_path, true).tap_err(|err| {
-                log::error!("Couldn't set readonly flag on {ini_prefix}Prefs.ini: {err}")
-            })?;
-        }
-        if custom_readonly {
-            fs_util::set_file_readonly(&custom_path, true).tap_err(|err| {
-                log::error!("Couldn't set readonly flag on {ini_prefix}Custom.ini: {err}")
-            })?;
-        }
+    }
+    commit_ini_changes_with_readonly(&changes, bypass_readonly)?;
+    for change in changes {
+        snapshots.insert(change.path, Some(change.after));
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod external_edit_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn readonly_save_requires_bypass_and_restores_permissions() -> anyhow::Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let path = fixture.path().join("Fallout76Custom.ini");
+        fs::write(&path, b"[Archive]\nkeep=yes\n")?;
+        let mut permissions = fs::metadata(&path)?.permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions)?;
+        let original_permissions = fs::metadata(&path)?.permissions();
+        let changes = [IniSaveChange {
+            path: path.clone(),
+            before: Some(b"[Archive]\nkeep=yes\n".to_vec()),
+            after: b"[Archive]\nkeep=no\n".to_vec(),
+        }];
+        assert!(commit_ini_changes_with_readonly(&changes, false).is_err());
+        assert_eq!(
+            fs::read(&path)?,
+            changes[0].before.clone().unwrap_or_default()
+        );
+        commit_ini_changes_with_readonly(&changes, true)?;
+        assert_eq!(fs::read(&path)?, changes[0].after);
+        assert!(fs::metadata(&path)?.permissions().readonly());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path)?.permissions().mode(),
+                original_permissions.mode()
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn targeted_write_rejects_duplicate_archive_sections() -> anyhow::Result<()> {
+        let input = "[Archive]\nkeep=yes\n[Other]\nkeep=still\n[archive]\nsResourceArchive2List=Other.ba2\n";
+        assert!(
+            ini_update(
+                input,
+                "Archive",
+                "sResourceArchive2List",
+                Some("FCMChatWidget.ba2")
+            )
+            .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_distinguishes_missing_file_from_read_error() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        assert_eq!(read_snapshot(&dir.path().join("missing.ini"))?, None);
+        assert!(read_snapshot(dir.path()).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn failed_later_ini_write_restores_earlier_file() -> anyhow::Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let first = fixture.path().join("Fallout76.ini");
+        fs::write(&first, b"before")?;
+        let blocking_file = fixture.path().join("not-a-directory");
+        fs::write(&blocking_file, b"block")?;
+        let changes = [
+            IniSaveChange {
+                path: first.clone(),
+                before: Some(b"before".to_vec()),
+                after: b"after".to_vec(),
+            },
+            IniSaveChange {
+                path: blocking_file.join("Fallout76Prefs.ini"),
+                before: None,
+                after: b"new".to_vec(),
+            },
+        ];
+        assert!(commit_ini_changes(&changes).is_err());
+        assert_eq!(fs::read(&first)?, b"before");
+        Ok(())
+    }
+
+    #[test]
+    fn later_merge_error_cannot_partially_save_an_earlier_ini() -> anyhow::Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let main_path = fixture.path().join("Fallout76.ini");
+        let prefs_path = fixture.path().join("Fallout76Prefs.ini");
+        let custom_path = fixture.path().join("Fallout76Custom.ini");
+        let original = b"[Display]\nfoo=1\n";
+        fs::write(&main_path, original)?;
+        fs::write(&prefs_path, b"\xff")?;
+        fs::write(&custom_path, b"[Archive]\nkeep=yes\n")?;
+        let mut changed_main = Ini::load_from_str("[Display]\nfoo=2\n")?;
+        changed_main.set_to(Some("Display"), "foo".to_owned(), "2".to_owned());
+        let mut snapshots = HashMap::new();
+        for path in [&main_path, &prefs_path, &custom_path] {
+            snapshots.insert(path.to_path_buf(), read_snapshot(path)?);
+        }
+        let result = _ini_save(
+            fixture.path().display().to_string(),
+            "Fallout76".to_owned(),
+            false,
+            Arc::new(Mutex::new(changed_main)),
+            Arc::new(Mutex::new(Ini::new())),
+            Arc::new(Mutex::new(Ini::new())),
+            Arc::new(Mutex::new(snapshots)),
+        );
+        assert!(result.is_err());
+        assert_eq!(fs::read(main_path)?, original);
+        Ok(())
+    }
+
+    #[test]
+    fn normal_save_updates_main_and_prefs_without_changing_other_files() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let main_path = dir.path().join("Fallout76.ini");
+        let prefs_path = dir.path().join("Fallout76Prefs.ini");
+        let custom_path = dir.path().join("Fallout76Custom.ini");
+        std::fs::write(
+            &main_path,
+            "; player note\r\n[Display]\r\nbFullScreen=1\r\n[Other]\r\nkeep=yes\r\n",
+        )?;
+        std::fs::write(
+            &prefs_path,
+            "; another note\r\n[Audio]\r\nfMasterVolume=1.0\r\n[Other]\r\nkeep=yes\r\n",
+        )?;
+        let custom_before = b"[Archive]\r\nsResourceArchive2List=FCMChatWidget.ba2\r\n";
+        std::fs::write(&custom_path, custom_before)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&main_path, std::fs::Permissions::from_mode(0o644))?;
+            std::fs::set_permissions(&prefs_path, std::fs::Permissions::from_mode(0o644))?;
+        }
+
+        let main = Arc::new(Mutex::new(Ini::new()));
+        let prefs = Arc::new(Mutex::new(Ini::new()));
+        let custom = Arc::new(Mutex::new(Ini::new()));
+        let baselines = Arc::new(Mutex::new(HashMap::new()));
+        let path = dir.path().display().to_string();
+        _ini_load(
+            path.clone(),
+            "Fallout76".to_owned(),
+            main.clone(),
+            prefs.clone(),
+            custom.clone(),
+            baselines.clone(),
+        )?;
+        main.lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .set_to(Some("Display"), "bFullScreen".to_owned(), "0".to_owned());
+        prefs
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .set_to(Some("Audio"), "fMasterVolume".to_owned(), "0.5".to_owned());
+        _ini_save(
+            path,
+            "Fallout76".to_owned(),
+            false,
+            main,
+            prefs,
+            custom,
+            baselines,
+        )?;
+
+        let main_after = std::fs::read_to_string(&main_path)?;
+        let prefs_after = std::fs::read_to_string(&prefs_path)?;
+        assert!(main_after.starts_with("; player note\r\n"));
+        assert!(main_after.contains("bFullScreen=0\r\n"));
+        assert!(main_after.contains("[Other]\r\nkeep=yes\r\n"));
+        assert!(prefs_after.starts_with("; another note\r\n"));
+        assert!(prefs_after.contains("fMasterVolume=0.5\r\n"));
+        assert!(prefs_after.contains("[Other]\r\nkeep=yes\r\n"));
+        assert_eq!(std::fs::read(custom_path)?, custom_before);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(main_path)?.permissions().mode() & 0o777,
+                0o644
+            );
+            assert_eq!(
+                std::fs::metadata(prefs_path)?.permissions().mode() & 0o777,
+                0o644
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn normal_save_preserves_hardlinks_and_symlinks() -> anyhow::Result<()> {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("main-source.ini");
+        let main = dir.path().join("Fallout76.ini");
+        let prefs = dir.path().join("Fallout76Prefs.ini");
+        let custom_source = dir.path().join("custom-source.ini");
+        let custom = dir.path().join("Fallout76Custom.ini");
+        fs::write(&source, "[Display]\nfoo=1\n")?;
+        fs::hard_link(&source, &main)?;
+        fs::write(&prefs, "[Display]\nfoo=1\n")?;
+        fs::write(&custom_source, "[Archive]\nkeep=yes\n")?;
+        std::os::unix::fs::symlink(&custom_source, &custom)?;
+        let main_state = Arc::new(Mutex::new(Ini::new()));
+        let prefs_state = Arc::new(Mutex::new(Ini::new()));
+        let custom_state = Arc::new(Mutex::new(Ini::new()));
+        let baselines = Arc::new(Mutex::new(HashMap::new()));
+        let path = dir.path().display().to_string();
+        _ini_load(
+            path.clone(),
+            "Fallout76".to_owned(),
+            main_state.clone(),
+            prefs_state.clone(),
+            custom_state.clone(),
+            baselines.clone(),
+        )?;
+        main_state
+            .lock()
+            .unwrap()
+            .set_to(Some("Display"), "foo".to_owned(), "2".to_owned());
+        custom_state.lock().unwrap().set_to(
+            Some("Archive"),
+            "keep".to_owned(),
+            "changed".to_owned(),
+        );
+        _ini_save(
+            path,
+            "Fallout76".to_owned(),
+            false,
+            main_state,
+            prefs_state,
+            custom_state,
+            baselines,
+        )?;
+        assert_eq!(fs::metadata(&source)?.ino(), fs::metadata(&main)?.ino());
+        assert!(custom.is_symlink());
+        assert!(fs::read_to_string(source)?.contains("foo=2"));
+        assert!(fs::read_to_string(custom_source)?.contains("keep=changed"));
+        Ok(())
+    }
+
+    #[test]
+    fn stale_state_does_not_overwrite_external_custom_ini_edit() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(dir.path().join("Fallout76.ini"), "[Display]\nfoo=1\n")?;
+        std::fs::write(dir.path().join("Fallout76Prefs.ini"), "[Display]\nfoo=1\n")?;
+        let custom = dir.path().join("Fallout76Custom.ini");
+        std::fs::write(
+            &custom,
+            "[Archive]\nsResourceArchive2List=HUDModLoader.ba2\n",
+        )?;
+        let main = Arc::new(Mutex::new(Ini::new()));
+        let prefs = Arc::new(Mutex::new(Ini::new()));
+        let custom_state = Arc::new(Mutex::new(Ini::new()));
+        let baselines = Arc::new(Mutex::new(HashMap::new()));
+        let path = dir.path().display().to_string();
+        _ini_load(
+            path.clone(),
+            "Fallout76".to_owned(),
+            main.clone(),
+            prefs.clone(),
+            custom_state.clone(),
+            baselines.clone(),
+        )?;
+        std::fs::write(
+            &custom,
+            "[Archive]\nsResourceArchive2List=HUDModLoader.ba2,FCMChatWidget.ba2\n",
+        )?;
+        assert!(
+            _ini_save(
+                path,
+                "Fallout76".to_owned(),
+                false,
+                main,
+                prefs,
+                custom_state,
+                baselines
+            )
+            .is_err()
+        );
+        assert!(std::fs::read_to_string(custom)?.contains("FCMChatWidget.ba2"));
+        Ok(())
+    }
+
+    #[test]
+    fn normal_save_preserves_unrelated_custom_ini_lines() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(dir.path().join("Fallout76.ini"), "[Display]\nfoo=1\n")?;
+        std::fs::write(dir.path().join("Fallout76Prefs.ini"), "[Display]\nfoo=1\n")?;
+        let custom = dir.path().join("Fallout76Custom.ini");
+        let before = "; player note\r\n[Archive]\r\nsResourceArchive2List=Other.ba2,FCMChatWidget.ba2\r\n[User]\r\nkeep=yes\r\n";
+        std::fs::write(&custom, before)?;
+        let main = Arc::new(Mutex::new(Ini::new()));
+        let prefs = Arc::new(Mutex::new(Ini::new()));
+        let custom_state = Arc::new(Mutex::new(Ini::new()));
+        let baselines = Arc::new(Mutex::new(HashMap::new()));
+        let path = dir.path().display().to_string();
+        _ini_load(
+            path.clone(),
+            "Fallout76".to_owned(),
+            main.clone(),
+            prefs.clone(),
+            custom_state.clone(),
+            baselines.clone(),
+        )?;
+        custom_state
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .set_to(Some("User"), "keep".to_owned(), "changed".to_owned());
+        _ini_save(
+            path,
+            "Fallout76".to_owned(),
+            false,
+            main,
+            prefs,
+            custom_state,
+            baselines,
+        )?;
+        let after = std::fs::read_to_string(custom)?;
+        assert!(after.starts_with("; player note\r\n"));
+        assert!(after.contains("sResourceArchive2List=Other.ba2,FCMChatWidget.ba2\r\n"));
+        assert!(after.contains("keep=changed\r\n"));
+        Ok(())
+    }
+
+    #[test]
+    fn normal_save_updates_unsectioned_keys_without_rewriting_other_lines() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(dir.path().join("Fallout76.ini"), "[Display]\nfoo=1\n")?;
+        std::fs::write(dir.path().join("Fallout76Prefs.ini"), "[Display]\nfoo=1\n")?;
+        let custom = dir.path().join("Fallout76Custom.ini");
+        std::fs::write(
+            &custom,
+            "; note\r\nGlobalSetting=old\r\nRemovedSetting=gone\r\n[Archive]\r\nsResourceArchive2List=FCMChatWidget.ba2\r\n",
+        )?;
+        let main = Arc::new(Mutex::new(Ini::new()));
+        let prefs = Arc::new(Mutex::new(Ini::new()));
+        let custom_state = Arc::new(Mutex::new(Ini::new()));
+        let baselines = Arc::new(Mutex::new(HashMap::new()));
+        let path = dir.path().display().to_string();
+        _ini_load(
+            path.clone(),
+            "Fallout76".to_owned(),
+            main.clone(),
+            prefs.clone(),
+            custom_state.clone(),
+            baselines.clone(),
+        )?;
+        let mut state = custom_state
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        state.set_to(None::<&str>, "GlobalSetting".to_owned(), "new".to_owned());
+        state.set_to(None::<&str>, "AddedSetting".to_owned(), "yes".to_owned());
+        state.delete_from(None::<&str>, "RemovedSetting");
+        drop(state);
+        _ini_save(
+            path,
+            "Fallout76".to_owned(),
+            false,
+            main,
+            prefs,
+            custom_state,
+            baselines,
+        )?;
+        let after = std::fs::read_to_string(custom)?;
+        assert!(after.starts_with("; note\r\nGlobalSetting=new\r\n"));
+        assert!(after.contains("AddedSetting=yes\r\n"));
+        assert!(!after.contains("RemovedSetting"));
+        assert!(after.contains("sResourceArchive2List=FCMChatWidget.ba2\r\n"));
+        Ok(())
+    }
 }
 
 /// Creates ini files from included templates.

@@ -1,9 +1,10 @@
-import { ManagedMod } from "@/commands/bindings";
+import { FcmChange, ManagedMod } from "@/commands/bindings";
 import { ConfirmModal } from "@/components/modals/ConfirmModal";
 import { useTranslation } from "react-i18next";
 
 interface Props {
   mod?: ManagedMod;
+  fcmChanges?: FcmChange[];
   show: boolean;
   onConfirm: (key: string) => void;
   onAbort: () => void;
@@ -23,6 +24,18 @@ export default function DeleteModModal(props: Props) {
       {t("mods.modOrderTab.modals.deleteModText", {
         mod: props.mod?.title || "",
       })}
+      {props.fcmChanges && (
+        <>
+          <p className="mt-3">{t("fcmImport.removeIntro")}</p>
+          <ul>
+            {props.fcmChanges.map((change) => (
+              <li key={change.path}>
+                {change.description}: {change.path}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </ConfirmModal>
   );
 }

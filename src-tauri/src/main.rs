@@ -38,6 +38,15 @@ fn main() {
             commands::profiles::get_profiles,
             commands::profiles::save_profiles,
             commands::game::launch_game,
+            commands::fcm::fcm_preview_remove,
+            commands::fcm::fcm_current_install,
+            commands::fcm::fcm_managed_owner,
+            commands::fcm::fcm_detect_import,
+            commands::fcm::fcm_probe_prerequisites,
+            commands::fcm::fcm_prerequisite_download_links,
+            commands::fcm::fcm_preview_import,
+            commands::fcm::fcm_apply,
+            commands::fcm::fcm_discard,
             commands::ini::ini_load,
             commands::ini::ini_save,
             commands::ini::ini_create_files,
@@ -207,6 +216,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .manage(IniFiles::default())
+        .manage(commands::fcm::FcmPlans::default())
         .manage(Arguments(args))
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {

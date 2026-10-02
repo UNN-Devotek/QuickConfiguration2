@@ -1,15 +1,30 @@
-import { commands, DirEntry, ManagedMod } from "@/commands/bindings";
+import {
+  commands,
+  DirEntry,
+  FcmPreview,
+  FcmPrerequisites,
+  ManagedMod,
+} from "@/commands/bindings";
 import { AnyError, commandErrorToString } from "@/commands/errors";
 import Mods from "@/commands/mods";
 import { createBaseManagedMod, modsEventBus } from "@/services/mods";
 import { updateModsStore, useModsStore } from "@/stores/mods";
 import { useProfilesStore } from "@/stores/profiles";
 import { useToastsStore } from "@/stores/toasts";
+import { resourceListStoreSync } from "@/stores/resourceList";
 import { path } from "@tauri-apps/api";
 import * as dialog from "@tauri-apps/plugin-dialog";
 import { atom, useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { isModInstallationDetailsModalShownAtom } from "@/views/mods/tabs/modOrder/modals";
+import { useState } from "react";
+import {
+  isFcmPrerequisiteModalShownAtom,
+  isModInstallationDetailsModalShownAtom,
+} from "@/views/mods/tabs/modOrder/modals";
+import {
+  type FcmImportProfile,
+  isFcmImportProfileActive,
+} from "@/views/mods/tabs/modOrder/modals/modInstallation/fcmProfile";
 
 const fileContentsAtom = atom<DirEntry[]>([]);
 const modAtom = atom<ManagedMod>(createBaseManagedMod());
@@ -22,6 +37,70 @@ export function useModInstallation() {
   );
   const [fileContents, setFileContents] = useAtom(fileContentsAtom);
   const [mod, setMod] = useAtom(modAtom);
+  const [fcmPreview, setFcmPreview] = useState<{
+    preview: FcmPreview;
+    profile: FcmImportProfile;
+  } | null>(null);
+  const [fcmPrerequisites, setFcmPrerequisites] = useState<{
+    paths: string[];
+    probe: FcmPrerequisites;
+    profile: FcmImportProfile;
+  } | null>(null);
+  const [, setFcmPrerequisiteModalShown] = useAtom(
+    isFcmPrerequisiteModalShownAtom,
+  );
+
+  const inspectFcmImport = async (paths: string[]) => {
+    if (!(await commands.fcmDetectImport(paths))) return false;
+    const modsPath = useProfilesStore.getState().getModsPath();
+    if (!modsPath) throw new Error(t("mods.errors.unsetModsPath"));
+    const owner = await commands.fcmManagedOwner(
+      modsPath,
+      useModsStore.getState().getManagedMods(),
+    );
+    if (owner)
+      throw new Error(t("fcmImport.managedOwner", { mod: owner.title }));
+    const profile = useProfilesStore.getState().getSelectedProfile();
+    if (!profile) throw new Error(t("errors.profileNotSet"));
+    const target: FcmImportProfile = {
+      key: profile.key,
+      installationPath: profile.installationPath,
+      iniPath: profile.iniPath,
+      iniPrefix: profile.iniPrefix,
+    };
+    modsEventBus.emitProgressUpdated(t("fcmImport.inspecting"));
+    await resourceListStoreSync.flushSave();
+    if (!isFcmImportProfileActive(target)) {
+      throw new Error(t("fcmImport.profileChanged"));
+    }
+    const probe = await commands.fcmProbePrerequisites(
+      profile.installationPath,
+    );
+    if (!probe.provider || !probe.hudModLoader) {
+      if (!isFcmImportProfileActive(target))
+        throw new Error(t("fcmImport.profileChanged"));
+      modsEventBus.emitProgressFinished();
+      setFcmPrerequisites({ paths, probe, profile: target });
+      setFcmPrerequisiteModalShown(true);
+      return true;
+    }
+    const preview = await commands.fcmPreviewImport(
+      profile.installationPath,
+      profile.iniPath,
+      profile.iniPrefix,
+      paths,
+      null,
+      null,
+      null,
+    );
+    if (!isFcmImportProfileActive(target)) {
+      await commands.fcmDiscard(preview.token);
+      throw new Error(t("fcmImport.profileChanged"));
+    }
+    modsEventBus.emitProgressFinished();
+    setFcmPreview({ preview, profile: target });
+    return true;
+  };
 
   const openInstallModal = (
     modDetails: ManagedMod,
@@ -56,6 +135,7 @@ export function useModInstallation() {
     partialModDetails: Partial<ManagedMod>,
   ) => {
     try {
+      if (await inspectFcmImport([filePath])) return;
       const modsPath = useProfilesStore.getState().getModsPath();
       const tmpPath = useProfilesStore.getState().getModsTmpPath();
       if (!modsPath || !tmpPath)
@@ -101,6 +181,7 @@ export function useModInstallation() {
     partialModDetails: Partial<ManagedMod>,
   ) => {
     try {
+      if (await inspectFcmImport(filePaths)) return;
       const modsPath = useProfilesStore.getState().getModsPath();
       const tmpPath = useProfilesStore.getState().getModsTmpPath();
       if (!modsPath || !tmpPath)
@@ -163,6 +244,8 @@ export function useModInstallation() {
         multiple: false,
       });
       if (!folderPath) return;
+
+      if (await inspectFcmImport([folderPath])) return;
 
       const modsPath = useProfilesStore.getState().getModsPath();
       const tmpPath = useProfilesStore.getState().getModsTmpPath();
@@ -259,6 +342,28 @@ export function useModInstallation() {
     installFromPaths,
     installFromFolder,
     installMod,
+    fcmModalProps: {
+      preview: fcmPreview?.preview ?? null,
+      profile: fcmPreview?.profile ?? null,
+      onAbort: () => {
+        if (fcmPreview)
+          commands.fcmDiscard(fcmPreview.preview.token).catch(console.error);
+        setFcmPreview(null);
+      },
+      onApplied: () => setFcmPreview(null),
+    },
+    fcmPrerequisiteProps: {
+      request: fcmPrerequisites,
+      onAbort: () => {
+        setFcmPrerequisites(null);
+        setFcmPrerequisiteModalShown(false);
+      },
+      onPreview: (preview: FcmPreview, profile: FcmImportProfile) => {
+        setFcmPrerequisites(null);
+        setFcmPrerequisiteModalShown(false);
+        setFcmPreview({ preview, profile });
+      },
+    },
     modalProps: {
       onInstall: installMod,
       onAbort: abortInstallation,

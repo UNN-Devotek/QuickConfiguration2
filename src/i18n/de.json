@@ -1,4 +1,24 @@
 {
+  "fcmImport": {
+    "title": "Fallout Chat Mod-Paket",
+    "modTitle": "Fallout Chat Mod",
+    "importIntro": "Quick Configuration hat in diesem Import ein FCM-Paket erkannt. Prüfe die Dateien vor der Installation. Das sichtbare HUD und die Server Bridge können nicht gleichzeitig aktiv sein.",
+    "removeIntro": "Prüfe die FCM-Dateien und Einträge, die entfernt werden.",
+    "inspecting": "FCM-Paket wird geprüft...",
+    "prerequisites": "Die Installation benötigt HUDModLoader und entweder ZFE oder xScal. Schließe Fallout 76 vor Änderungen.",
+    "hud": "Sichtbares HUD",
+    "bridge": "Server Bridge",
+    "previewExpired": "Die Vorschau zum Entfernen des FCM-Mods ist abgelaufen. Wähle erneut Löschen.",
+    "profileChanged": "Das ausgewählte Spielprofil hat sich geändert. Starte die FCM-Aktion erneut.",
+    "managedOwner": "{{mod}} verwaltet bereits ein FCM-Archiv. Entferne diesen Mod über seine normale Mod-Zeile, bevor du den geführten FCM-Installer verwendest.",
+    "refreshFailed": "Die FCM-Änderungen wurden angewendet, aber Quick Configuration konnte die Einstellungen nicht neu laden: {{error}}. Lade das Profil vor weiteren Änderungen neu.",
+    "packageVersion": "Paketversion {{version}} aus {{source}}",
+    "review": "Dateiänderungen prüfen",
+    "detected": "Provider: {{provider}}. Aktueller FCM-Mod: {{installed}}.",
+    "none": "keiner",
+    "apply": "Änderungen anwenden",
+    "completed": "Änderungen angewendet. Sicherung: {{backup}}"
+  },
   "common": {
     "yes": "Ja",
     "no": "Nein",
