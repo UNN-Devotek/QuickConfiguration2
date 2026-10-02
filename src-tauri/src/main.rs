@@ -51,6 +51,8 @@ fn main() {
             commands::ini::ini_save,
             commands::ini::ini_create_files,
             commands::ini::ini_get_error_context,
+            commands::ini::ini_are_read_only,
+            commands::ini::ini_set_read_only,
             commands::ini::ini_get_string,
             commands::ini::ini_set_string,
             commands::ini::ini_get_int,
@@ -124,6 +126,8 @@ fn main() {
             commands::translations::check_for_translation_updates,
             commands::translations::download_translations,
             commands::download::download_with_progress,
+            commands::fs::is_filename_valid,
+            commands::fs::sanitize_filename,
         ])
         .events(collect_events![
             commands::nexusmods::SSOUpdate,

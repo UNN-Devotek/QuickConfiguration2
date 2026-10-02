@@ -112,8 +112,8 @@ async fcmDiscard(token: string) : Promise<null> {
 async iniLoad(iniPath: string, iniPrefix: string) : Promise<null> {
     return await TAURI_INVOKE("ini_load", { iniPath, iniPrefix });
 },
-async iniSave(iniPath: string, iniPrefix: string) : Promise<null> {
-    return await TAURI_INVOKE("ini_save", { iniPath, iniPrefix });
+async iniSave(iniPath: string, iniPrefix: string, bypassReadonly: boolean) : Promise<null> {
+    return await TAURI_INVOKE("ini_save", { iniPath, iniPrefix, bypassReadonly });
 },
 /**
  * Creates ini files from included templates.
@@ -123,6 +123,18 @@ async iniCreateFiles(iniPath: string, iniPrefix: string) : Promise<null> {
 },
 async iniGetErrorContext(iniPath: string, fileName: string, line: number, msg: string) : Promise<IniErrorContext> {
     return await TAURI_INVOKE("ini_get_error_context", { iniPath, fileName, line, msg });
+},
+/**
+ * Checks if ini files are set read only.
+ */
+async iniAreReadOnly(iniPath: string, iniPrefix: string) : Promise<boolean> {
+    return await TAURI_INVOKE("ini_are_read_only", { iniPath, iniPrefix });
+},
+/**
+ * Sets ini files read only.
+ */
+async iniSetReadOnly(iniPath: string, iniPrefix: string, readonly: boolean) : Promise<null> {
+    return await TAURI_INVOKE("ini_set_read_only", { iniPath, iniPrefix, readonly });
 },
 async iniGetString(iniFile: IniFile, section: string | null, key: string) : Promise<string | null> {
     return await TAURI_INVOKE("ini_get_string", { iniFile, section, key });
@@ -415,6 +427,12 @@ async downloadTranslations() : Promise<string[]> {
 },
 async downloadWithProgress(downloadUrl: string, downloadFolder: string) : Promise<string> {
     return await TAURI_INVOKE("download_with_progress", { downloadUrl, downloadFolder });
+},
+async isFilenameValid(filename: string) : Promise<boolean> {
+    return await TAURI_INVOKE("is_filename_valid", { filename });
+},
+async sanitizeFilename(filename: string, replacement: string) : Promise<string> {
+    return await TAURI_INVOKE("sanitize_filename", { filename, replacement });
 }
 }
 
@@ -707,7 +725,7 @@ export type ResourceInsertionPosition = "prepend" | "append"
 export type ResourceList = string[]
 export type Screenshot = { path: string; thumbnailPath: string }
 export type SerializableCommandResult<T> = { status: "ok"; value: T } | { status: "error"; value: CommandError }
-export type Settings = { version: string; theme: Theme; useGameCursor: boolean; language: string | null; translationsLastUpdated: string | null; fetchServerStatusOnStart: boolean; checkForUpdatesOnStart: boolean; downloadTranslationsOnStart: boolean; quitOnGameLaunch: boolean; navigationCollapsed: boolean; modManager: ModManagerSettings; migratedFromV1?: SettingsMigration | null; prereleaseDismissed?: boolean | null }
+export type Settings = { version: string; theme: Theme; useGameCursor: boolean; language: string | null; translationsLastUpdated: string | null; fetchServerStatusOnStart: boolean; checkForUpdatesOnStart: boolean; downloadTranslationsOnStart: boolean; quitOnGameLaunch: boolean; navigationCollapsed: boolean; bypassIniReadonly: boolean; modManager: ModManagerSettings; migratedFromV1?: SettingsMigration | null; prereleaseDismissed?: boolean | null }
 export type SettingsMigration = { fromVersion: string; toVersion: string; date: string; dismissed: boolean }
 export type SpecialPath = "AppInstallFolder" | "AppConfigFolder" | "AppTranslationsFolder" | "SteamScreenshotFolder"
 export type Theme = "light" | "dark" | "system"

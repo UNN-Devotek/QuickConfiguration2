@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf, StripPrefixError};
 
 use cfg_if::cfg_if;
 
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::{ERROR_NOT_SAME_DEVICE, WIN32_ERROR};
+
 use crate::utils::channel;
 
 pub fn get_relative_path<P1: AsRef<Path>, P2: AsRef<Path>>(
@@ -37,16 +40,20 @@ pub enum CopyMethod {
 fn are_on_same_drive(src: &Path, dst: &Path) -> Option<bool> {
     use std::path::Component;
 
-    // Canonicalize to get absolute paths with drive letters
-    let src = src.canonicalize().ok()?;
-    let dst = dst.canonicalize().ok()?;
+    // Try to canonicalize to get absolute paths with drive letters:
+    let src = src.canonicalize().unwrap_or(src.to_path_buf());
+    let dst = dst.canonicalize().unwrap_or(dst.to_path_buf());
 
-    // Get the drive letter from both paths by checking the prefix component
+    // Get the drive letter from both paths by checking the prefix component:
     let get_drive = |path: &Path| -> Option<String> {
         path.components().find_map(|c| match c {
             Component::Prefix(prefix) => {
-                // Convert the prefix to a string for comparison
-                prefix.as_os_str().to_str().map(|s| s.to_uppercase())
+                // Convert the prefix to a string for comparison:
+                prefix
+                    .as_os_str()
+                    .to_str()
+                    .map(|s| s.strip_prefix(r"\\?\").unwrap_or(s)) // "Convert" verbatim disk (\\?\C:) to DOS disk (C:)
+                    .map(|s| s.to_uppercase()) // Ignore case
             }
             _ => None,
         })
@@ -56,6 +63,22 @@ fn are_on_same_drive(src: &Path, dst: &Path) -> Option<bool> {
     let dst_drive = get_drive(&dst)?;
 
     Some(src_drive == dst_drive)
+}
+
+/// Checks if file is readonly.
+pub fn is_file_readonly<P: AsRef<Path>>(file_path: P) -> io::Result<bool> {
+    Ok(File::open(file_path.as_ref())?
+        .metadata()?
+        .permissions()
+        .readonly())
+}
+
+/// Makes the file readonly or writable.
+pub fn set_file_readonly<P: AsRef<Path>>(file_path: P, read_only: bool) -> io::Result<()> {
+    let mut permissions = File::open(file_path.as_ref())?.metadata()?.permissions();
+    permissions.set_readonly(read_only);
+    fs::set_permissions(file_path.as_ref(), permissions)?;
+    Ok(())
 }
 
 /// Copies/symlinks/hardlinks `src` to `dst`.
@@ -90,12 +113,37 @@ pub fn copy_or_link<P1: AsRef<Path>, P2: AsRef<Path>>(
                 // If the drive letters cannot be determined, just assume that they are the same:
                 if !are_on_same_drive(src_path, dst_path).unwrap_or(true) {
                     // Fallback to copy if on different drives:
+                    log::trace!(
+                        "Requested to hardlink {src_path:?} to {dst_path:?} but drive letters did not match: Falling back to copying."
+                    );
                     fs::copy(src_path, dst_path)?;
                     return Ok(());
                 }
             }
 
-            fs::hard_link(src_path, dst_path)?;
+            let result = fs::hard_link(src_path, dst_path);
+            // Check for errors:
+            #[cfg(target_os = "windows")]
+            {
+                // On Windows, let's try to extract the raw system error code and check
+                // if the error occurred because the paths are on different filesystems
+                // (and assuming our heuristic above didn't catch that).
+                if let Err(ref error) = result
+                    && let Some(os_error) = error.raw_os_error()
+                    && let Ok(win_error) = u32::try_from(os_error).map(WIN32_ERROR)
+                {
+                    // Compare https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-
+                    if win_error == ERROR_NOT_SAME_DEVICE {
+                        // Fallback to copy if on different drives:
+                        log::trace!(
+                            "Attempted to hardlink {src_path:?} to {dst_path:?} but failed with OS error {os_error}: Falling back to copying."
+                        );
+                        fs::copy(src_path, dst_path)?;
+                        return Ok(());
+                    }
+                }
+            }
+            result?
         }
         CopyMethod::Symlink => {
             // TODO: On Windows, check if we have permission to create symlinks (`SeCreateSymbolicLinkPrivilege` or admin). If not, fallback to copying.
@@ -564,5 +612,5 @@ pub fn sanitize_filename(filename: &str, replacement: char) -> String {
         result.push(ch);
     }
 
-    result
+    result.trim_end().to_string()
 }

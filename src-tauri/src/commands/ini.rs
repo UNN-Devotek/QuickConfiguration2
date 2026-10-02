@@ -13,6 +13,7 @@ use tauri::async_runtime::spawn_blocking;
 
 use super::errors::{CommandError, CommandResult};
 use crate::features::stores::ini::{IniFile, IniFiles};
+use crate::utils::fs_util;
 use crate::utils::ini::IniAccessors;
 use crate::utils::paths::get_resources_path;
 
@@ -234,6 +235,70 @@ fn commit_ini_changes(changes: &[IniSaveChange]) -> CommandResult<()> {
     Ok(())
 }
 
+fn restore_readonly_permissions(
+    files: &[(std::path::PathBuf, fs::Permissions)],
+) -> CommandResult<()> {
+    let failures: Vec<String> = files
+        .iter()
+        .filter_map(|(path, permissions)| {
+            fs::set_permissions(path, permissions.clone())
+                .err()
+                .map(|error| format!("{}: {error}", path.display()))
+        })
+        .collect();
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(CommandError::String {
+            message: format!("Could not restore INI permissions: {}", failures.join("; ")),
+        })
+    }
+}
+
+fn commit_ini_changes_with_readonly(
+    changes: &[IniSaveChange],
+    bypass_readonly: bool,
+) -> CommandResult<()> {
+    let mut readonly = Vec::new();
+    for change in changes {
+        if change.before.is_none() {
+            continue;
+        }
+        let permissions = fs::metadata(&change.path)?.permissions();
+        if permissions.readonly() {
+            if !bypass_readonly {
+                return Err(CommandError::String {
+                    message: format!("{} is read-only", change.path.display()),
+                });
+            }
+            readonly.push((change.path.clone(), permissions));
+        }
+    }
+    for (path, permissions) in &readonly {
+        let mut writable = permissions.clone();
+        writable.set_readonly(false);
+        if let Err(error) = fs::set_permissions(path, writable) {
+            let restore = restore_readonly_permissions(&readonly);
+            return Err(CommandError::String {
+                message: format!(
+                    "Could not make {} writable: {error}; permission restoration: {restore:?}",
+                    path.display()
+                ),
+            });
+        }
+    }
+    let saved = commit_ini_changes(changes);
+    let restored = restore_readonly_permissions(&readonly);
+    match (saved, restored) {
+        (Err(error), Err(restore)) => Err(CommandError::String {
+            message: format!("{error}; {restore}"),
+        }),
+        (Err(error), _) => Err(error),
+        (_, Err(error)) => Err(error),
+        (Ok(()), Ok(())) => Ok(()),
+    }
+}
+
 #[duplicate_item(
     ini_get_TYPE        VALUE     RETURN_TYPE;
     [ini_get_string]    [string]  [String];
@@ -411,22 +476,34 @@ pub fn _ini_load(
 pub async fn ini_save(
     ini_path: String,
     ini_prefix: String,
+    bypass_readonly: bool,
     state: State<'_, IniFiles>,
 ) -> CommandResult<()> {
     let main = Arc::clone(&state.main);
     let prefs = Arc::clone(&state.prefs);
     let custom = Arc::clone(&state.custom);
     let baselines = Arc::clone(&state.baselines);
-    spawn_blocking(move || _ini_save(ini_path, ini_prefix, main, prefs, custom, baselines))
-        .await
-        .tap_err(|e| log::error!("Couldn't join handle in ini_save: {e}"))
-        .map_err(CommandError::from)
-        .flatten()
+    spawn_blocking(move || {
+        _ini_save(
+            ini_path,
+            ini_prefix,
+            bypass_readonly,
+            main,
+            prefs,
+            custom,
+            baselines,
+        )
+    })
+    .await
+    .tap_err(|e| log::error!("Couldn't join handle in ini_save: {e}"))
+    .map_err(CommandError::from)
+    .flatten()
 }
 
 pub fn _ini_save(
     ini_path: String,
     ini_prefix: String,
+    bypass_readonly: bool,
     main: Arc<Mutex<Ini>>,
     prefs: Arc<Mutex<Ini>>,
     custom: Arc<Mutex<Ini>>,
@@ -489,7 +566,7 @@ pub fn _ini_save(
             });
         }
     }
-    commit_ini_changes(&changes)?;
+    commit_ini_changes_with_readonly(&changes, bypass_readonly)?;
     for change in changes {
         snapshots.insert(change.path, Some(change.after));
     }
@@ -501,6 +578,39 @@ pub fn _ini_save(
 mod external_edit_tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn readonly_save_requires_bypass_and_restores_permissions() -> anyhow::Result<()> {
+        let fixture = tempfile::tempdir()?;
+        let path = fixture.path().join("Fallout76Custom.ini");
+        fs::write(&path, b"[Archive]\nkeep=yes\n")?;
+        let mut permissions = fs::metadata(&path)?.permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions)?;
+        let original_permissions = fs::metadata(&path)?.permissions();
+        let changes = [IniSaveChange {
+            path: path.clone(),
+            before: Some(b"[Archive]\nkeep=yes\n".to_vec()),
+            after: b"[Archive]\nkeep=no\n".to_vec(),
+        }];
+        assert!(commit_ini_changes_with_readonly(&changes, false).is_err());
+        assert_eq!(
+            fs::read(&path)?,
+            changes[0].before.clone().unwrap_or_default()
+        );
+        commit_ini_changes_with_readonly(&changes, true)?;
+        assert_eq!(fs::read(&path)?, changes[0].after);
+        assert!(fs::metadata(&path)?.permissions().readonly());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path)?.permissions().mode(),
+                original_permissions.mode()
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn targeted_write_rejects_duplicate_archive_sections() -> anyhow::Result<()> {
@@ -568,6 +678,7 @@ mod external_edit_tests {
         let result = _ini_save(
             fixture.path().display().to_string(),
             "Fallout76".to_owned(),
+            false,
             Arc::new(Mutex::new(changed_main)),
             Arc::new(Mutex::new(Ini::new())),
             Arc::new(Mutex::new(Ini::new())),
@@ -621,7 +732,15 @@ mod external_edit_tests {
             .lock()
             .map_err(|error| anyhow::anyhow!(error.to_string()))?
             .set_to(Some("Audio"), "fMasterVolume".to_owned(), "0.5".to_owned());
-        _ini_save(path, "Fallout76".to_owned(), main, prefs, custom, baselines)?;
+        _ini_save(
+            path,
+            "Fallout76".to_owned(),
+            false,
+            main,
+            prefs,
+            custom,
+            baselines,
+        )?;
 
         let main_after = std::fs::read_to_string(&main_path)?;
         let prefs_after = std::fs::read_to_string(&prefs_path)?;
@@ -688,6 +807,7 @@ mod external_edit_tests {
         _ini_save(
             path,
             "Fallout76".to_owned(),
+            false,
             main_state,
             prefs_state,
             custom_state,
@@ -731,6 +851,7 @@ mod external_edit_tests {
             _ini_save(
                 path,
                 "Fallout76".to_owned(),
+                false,
                 main,
                 prefs,
                 custom_state,
@@ -770,6 +891,7 @@ mod external_edit_tests {
         _ini_save(
             path,
             "Fallout76".to_owned(),
+            false,
             main,
             prefs,
             custom_state,
@@ -815,6 +937,7 @@ mod external_edit_tests {
         _ini_save(
             path,
             "Fallout76".to_owned(),
+            false,
             main,
             prefs,
             custom_state,
@@ -849,6 +972,65 @@ pub fn ini_create_files(ini_path: String, ini_prefix: String) -> CommandResult<(
 
     fs::copy(&main_template_path, &main_path)?;
     fs::copy(&prefs_template_path, &prefs_path)?;
+
+    Ok(())
+}
+
+/// Checks if ini files are set read only.
+#[tauri::command]
+#[specta::specta]
+pub fn ini_are_read_only(ini_path: String, ini_prefix: String) -> CommandResult<bool> {
+    // Get paths based on directory path and prefix:
+    let main_path = Path::new(&ini_path).join(format!("{}.ini", ini_prefix));
+    let prefs_path = Path::new(&ini_path).join(format!("{}Prefs.ini", ini_prefix));
+    let custom_path = Path::new(&ini_path).join(format!("{}Custom.ini", ini_prefix));
+
+    // Check if files are readonly, ignoring any read errors:
+    let main_readonly = fs_util::is_file_readonly(&main_path)
+        .tap_err(|err| log::warn!("Couldn't read readonly flag on {ini_prefix}.ini: {err}"))
+        .unwrap_or(false);
+    let prefs_readonly = fs_util::is_file_readonly(&prefs_path)
+        .tap_err(|err| log::warn!("Couldn't read readonly flag on {ini_prefix}Prefs.ini: {err}"))
+        .unwrap_or(false);
+    let custom_readonly = fs_util::is_file_readonly(&custom_path)
+        .tap_err(|err| log::warn!("Couldn't read readonly flag on {ini_prefix}Custom.ini: {err}"))
+        .unwrap_or(false);
+
+    Ok(main_readonly || prefs_readonly || custom_readonly)
+}
+
+/// Sets ini files read only.
+#[tauri::command]
+#[specta::specta]
+pub fn ini_set_read_only(
+    ini_path: String,
+    ini_prefix: String,
+    readonly: bool,
+) -> CommandResult<()> {
+    log::trace!(
+        "Setting ini files in '{}' with prefix '{}' {}",
+        ini_path,
+        ini_prefix,
+        if readonly {
+            "read-only"
+        } else {
+            "read-writable"
+        }
+    );
+
+    // Get paths based on directory path and prefix:
+    let main_path = Path::new(&ini_path).join(format!("{}.ini", ini_prefix));
+    let prefs_path = Path::new(&ini_path).join(format!("{}Prefs.ini", ini_prefix));
+    let custom_path = Path::new(&ini_path).join(format!("{}Custom.ini", ini_prefix));
+
+    // Set read-only flag:
+    fs_util::set_file_readonly(&main_path, readonly)
+        .tap_err(|err| log::error!("Couldn't set readonly flag on {ini_prefix}.ini: {err}"))?;
+    fs_util::set_file_readonly(&prefs_path, readonly)
+        .tap_err(|err| log::error!("Couldn't set readonly flag on {ini_prefix}Prefs.ini: {err}"))?;
+    fs_util::set_file_readonly(&custom_path, readonly).tap_err(|err| {
+        log::error!("Couldn't set readonly flag on {ini_prefix}Custom.ini: {err}")
+    })?;
 
     Ok(())
 }
