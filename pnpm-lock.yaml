@@ -196,8 +196,8 @@ importers:
         specifier: ^5.2.0
         version: 5.2.0(supports-color@8.1.1)(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0))
       '@vitest/coverage-v8':
-        specifier: ^4.1.10
-        version: 4.1.10(vitest@4.1.12)
+        specifier: ^4.1.12
+        version: 4.1.12(vitest@4.1.12)
       eslint:
         specifier: ^9.39.5
         version: 9.39.5(jiti@2.7.0)(supports-color@8.1.1)
@@ -239,7 +239,7 @@ importers:
         version: 7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0)
       vitest:
         specifier: ^4.1.12
-        version: 4.1.12(@types/node@25.9.5)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0(supports-color@8.1.1))(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0))
+        version: 4.1.12(@types/node@25.9.5)(@vitest/coverage-v8@4.1.12)(jsdom@26.1.0(supports-color@8.1.1))(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0))
       vitest-fetch-mock:
         specifier: ^0.4.5
         version: 0.4.5(vitest@4.1.12)
@@ -1613,11 +1613,11 @@ packages:
     peerDependencies:
       vite: ^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
 
-  '@vitest/coverage-v8@4.1.10':
-    resolution: {integrity: sha512-IM49HmthevbgAO4anp1hwtoT9wYe59w0LR00gr+eagHE+ZJ5lK4sLPeO0ubgoJcwLk6dehU3R24N+FbEEKDc8g==}
+  '@vitest/coverage-v8@4.1.12':
+    resolution: {integrity: sha512-6S7/iVknKglLAxMFxQGNppBI0iqJS2NgM6FBxavitj7KaDq/vywOWGf6dGu7F2L1Qy0G6S3uTp7aGshHrzK8JA==}
     peerDependencies:
-      '@vitest/browser': 4.1.10
-      vitest: 4.1.10
+      '@vitest/browser': 4.1.12
+      vitest: 4.1.12
     peerDependenciesMeta:
       '@vitest/browser':
         optional: true
@@ -1636,9 +1636,6 @@ packages:
       vite:
         optional: true
 
-  '@vitest/pretty-format@4.1.10':
-    resolution: {integrity: sha512-W1HsjSH4MXQ9YfmmhLAoIYf1HRfekQCGngeIgcei6MP5QQGWUe0gkopdZQaVCFO+JDJMrAJGwa5pRpNpvy4P8Q==}
-
   '@vitest/pretty-format@4.1.12':
     resolution: {integrity: sha512-XW9O8+Mxx4VpCtkYdMJLZQQwsVryP9wk7cPKDxtXFfwSak6yRh5+2fep/Y0XF/ElBvJHq8bcYdi6aeuai0opZA==}
 
@@ -1650,9 +1647,6 @@ packages:
 
   '@vitest/spy@4.1.12':
     resolution: {integrity: sha512-RGq9x4JNGNTZHEJxvN0oSiJjeSCExm0n2gZKKJZHY9cX5AVA6M7VJILBT3ZJ/tJ/0J9uWT7fETV9/btoi//vSg==}
-
-  '@vitest/utils@4.1.10':
-    resolution: {integrity: sha512-fy9am/HWxbaGt/Sawrp90vt6Y6jQwf1RX77cz3uwoJwJVMli/e1IEwRPnMNJ7vKfPTwo0diXifkpPvwH9v7nGA==}
 
   '@vitest/utils@4.1.12':
     resolution: {integrity: sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA==}
@@ -5349,10 +5343,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@4.1.10(vitest@4.1.12)':
+  '@vitest/coverage-v8@4.1.12(vitest@4.1.12)':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
-      '@vitest/utils': 4.1.10
+      '@vitest/utils': 4.1.12
       ast-v8-to-istanbul: 1.0.5
       istanbul-lib-coverage: 3.2.2
       istanbul-lib-report: 3.0.1
@@ -5361,7 +5355,7 @@ snapshots:
       obug: 2.1.4
       std-env: 4.2.0
       tinyrainbow: 3.1.1
-      vitest: 4.1.12(@types/node@25.9.5)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0(supports-color@8.1.1))(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0))
+      vitest: 4.1.12(@types/node@25.9.5)(@vitest/coverage-v8@4.1.12)(jsdom@26.1.0(supports-color@8.1.1))(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0))
 
   '@vitest/expect@4.1.12':
     dependencies:
@@ -5380,10 +5374,6 @@ snapshots:
     optionalDependencies:
       vite: 7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0)
 
-  '@vitest/pretty-format@4.1.10':
-    dependencies:
-      tinyrainbow: 3.1.1
-
   '@vitest/pretty-format@4.1.12':
     dependencies:
       tinyrainbow: 3.1.1
@@ -5401,12 +5391,6 @@ snapshots:
       pathe: 2.0.3
 
   '@vitest/spy@4.1.12': {}
-
-  '@vitest/utils@4.1.10':
-    dependencies:
-      '@vitest/pretty-format': 4.1.10
-      convert-source-map: 2.0.0
-      tinyrainbow: 3.1.1
 
   '@vitest/utils@4.1.12':
     dependencies:
@@ -8000,9 +7984,9 @@ snapshots:
 
   vitest-fetch-mock@0.4.5(vitest@4.1.12):
     dependencies:
-      vitest: 4.1.12(@types/node@25.9.5)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0(supports-color@8.1.1))(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0))
+      vitest: 4.1.12(@types/node@25.9.5)(@vitest/coverage-v8@4.1.12)(jsdom@26.1.0(supports-color@8.1.1))(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0))
 
-  vitest@4.1.12(@types/node@25.9.5)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0(supports-color@8.1.1))(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0)):
+  vitest@4.1.12(@types/node@25.9.5)(@vitest/coverage-v8@4.1.12)(jsdom@26.1.0(supports-color@8.1.1))(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0)):
     dependencies:
       '@vitest/expect': 4.1.12
       '@vitest/mocker': 4.1.12(vite@7.3.7(@types/node@25.9.5)(jiti@2.7.0)(sass@1.78.0))
@@ -8026,7 +8010,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 25.9.5
-      '@vitest/coverage-v8': 4.1.10(vitest@4.1.12)
+      '@vitest/coverage-v8': 4.1.12(vitest@4.1.12)
       jsdom: 26.1.0(supports-color@8.1.1)
     transitivePeerDependencies:
       - msw
