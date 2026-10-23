@@ -257,10 +257,12 @@ impl From<DownloadError> for CommandError {
                 message: value.to_string(),
                 variant: value.as_ref().to_owned(),
             },
-            DownloadError::FileNameUnknown => Self::DownloadError {
-                message: value.to_string(),
-                variant: value.as_ref().to_owned(),
-            },
+            DownloadError::FileNameUnknown | DownloadError::InvalidFileName => {
+                Self::DownloadError {
+                    message: value.to_string(),
+                    variant: value.as_ref().to_owned(),
+                }
+            }
         }
     }
 }

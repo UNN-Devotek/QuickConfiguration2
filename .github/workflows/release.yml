@@ -38,35 +38,23 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-24.04' || matrix.platform == 'ubuntu-24.04-arm' # This must match the platform value defined above.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libappindicator3-dev librsvg2-dev patchelf
-
-          # Pin WebKit to avoid blank-webview regression on newer ubuntu-24.04 packages
-          # Credit:
-          # - https://github.com/ActivityWatch/activitywatch/pull/1311/changes
-          # - https://github.com/tauri-apps/tauri/issues/11994#issuecomment-2585913213
-          sudo apt-get install -y --allow-downgrades \
-            libwebkit2gtk-4.1-0=2.44.0-2 \
-            libwebkit2gtk-4.1-dev=2.44.0-2 \
-            libjavascriptcoregtk-4.1-0=2.44.0-2 \
-            libjavascriptcoregtk-4.1-dev=2.44.0-2 \
-            gir1.2-javascriptcoregtk-4.1=2.44.0-2 \
-            gir1.2-webkit2-4.1=2.44.0-2
+          sudo apt-get install -y libappindicator3-dev librsvg2-dev patchelf libwebkit2gtk-4.1-dev
 
       # https://pnpm.io/continuous-integration#github-actions
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6.1.0
         # picks version from the package.json with the key "packageManager"
 
       - name: Install Node.js LTS
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.1.0
         with:
-          node-version: lts/*
+          node-version: "22.23.4"
           cache: "pnpm" # Set this to npm, yarn or pnpm.
 
       - name: Install Rust (stable toolchain)

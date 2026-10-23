@@ -1,7 +1,6 @@
 #[cfg(test)]
 pub mod tests;
 
-use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -29,6 +28,8 @@ pub enum DownloadError {
     ContentLengthUnknown,
     #[error("Failed to determine file name from URL or HTTP headers")]
     FileNameUnknown,
+    #[error("Download filename must be a single safe file name")]
+    InvalidFileName,
 }
 
 /// Downloads a file to the given directory path.
@@ -48,8 +49,8 @@ pub async fn download_file<P: AsRef<Path>>(
 
     // Resolve the final file path based on the provided file name,
     // Content-Disposition header, or URL fallback:
-    let path = if let Some(file_name) = file_name {
-        path.as_ref().join(file_name)
+    let file_name = if let Some(file_name) = file_name {
+        file_name.to_string()
     } else {
         let file_name = resp
             .headers()
@@ -62,7 +63,7 @@ pub async fn download_file<P: AsRef<Path>>(
             log::trace!(
                 "[download_file] Got file name from Content-Disposition header: {file_name}"
             );
-            path.as_ref().join(file_name)
+            file_name
         } else {
             let file_name = resp
                 .url()
@@ -76,9 +77,21 @@ pub async fn download_file<P: AsRef<Path>>(
                 .ok_or(DownloadError::FileNameUnknown)?;
 
             log::trace!("[download_file] Got file name from URL segments: {file_name}");
-            path.as_ref().join(file_name)
+            file_name
         }
     };
+
+    if file_name.is_empty()
+        || file_name == "."
+        || file_name == ".."
+        || file_name.contains(['/', '\\', ':'])
+        || file_name.chars().any(char::is_control)
+        || file_name.ends_with(['.', ' '])
+    {
+        log::error!("Refusing unsafe download filename");
+        return Err(DownloadError::InvalidFileName);
+    }
+    let path = path.as_ref().join(file_name);
 
     log::trace!(
         "[download_file] Starting download from URL {} to file {:?} with size {} B",
@@ -90,7 +103,8 @@ pub async fn download_file<P: AsRef<Path>>(
     let mut downloaded_bytes = 0u64;
     let one_percent_in_bytes = total_bytes / 100;
     let mut stream = resp.bytes_stream();
-    let mut file = File::create(&path)?;
+    let mut file =
+        tempfile::NamedTempFile::new_in(path.parent().ok_or(DownloadError::InvalidFileName)?)?;
 
     tx.send(DownloadProgress {
         downloaded_bytes: 0,
@@ -115,6 +129,8 @@ pub async fn download_file<P: AsRef<Path>>(
             .map_err(|_| DownloadError::SendError)?;
         }
     }
+
+    file.persist(&path).map_err(|error| error.error)?;
 
     tx.send(DownloadProgress {
         downloaded_bytes: total_bytes,

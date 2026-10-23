@@ -17,3 +17,21 @@ fn test_extract_archive() {
     assert!(extracted_file.is_file());
     assert_eq!(fs::read_to_string(extracted_file).unwrap(), "test");
 }
+
+#[test]
+fn test_extract_archive_confines_traversal_and_symlinks() {
+    let owned = TempDir::new().unwrap();
+    let destination = owned.path().join("extracted");
+    fs::create_dir(&destination).unwrap();
+    let sentinel = owned.path().join("outside.txt");
+    fs::write(&sentinel, "unchanged").unwrap();
+
+    let result = extract_archive(
+        Path::new("tests/fixtures/archive-traversal.tar"),
+        destination.as_path(),
+    );
+
+    assert!(result.is_err());
+    assert_eq!(fs::read_to_string(&sentinel).unwrap(), "unchanged");
+    assert!(!destination.join("escape.txt").is_symlink());
+}
