@@ -12,3 +12,7 @@ Files used in unit texts.
 | `general_none.ba2`         | BA2 archive containing `test.txt` with format `General` and compression `None`                                                |
 | `dds_default.ba2`          | BA2 archive containing `pixel.dds` with format `DDS` and compression `Default`                                                |
 | `dds_default_textures.ba2` | BA2 archive containing `pixel.dds` in `Textures` folder (=> `Textures/pixel.dds`) with format `DDS` and compression `Default` |
+
+`archive-traversal.tar` contains only harmless text and a relative symlink. The
+7-Zip regression extracts it into an owned temporary tree and checks that a sibling
+sentinel remains unchanged and that no escaping symlink is created.
